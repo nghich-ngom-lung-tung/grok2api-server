@@ -29,6 +29,7 @@ ARG TARGETOS
 ARG TARGETARCH
 
 WORKDIR /src/backend
+ENV GOTOOLCHAIN=auto
 RUN apk add --no-cache ca-certificates git
 
 COPY grok2api_repo/backend/go.mod grok2api_repo/backend/go.sum ./

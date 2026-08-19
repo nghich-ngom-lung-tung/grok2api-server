@@ -1,6 +1,6 @@
 module github.com/chenyme/grok2api/backend
 
-go 1.26
+go 1.25.0
 
 require (
 	github.com/Asutorufa/yuhaiin v0.3.8
