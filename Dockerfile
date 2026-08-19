@@ -66,8 +66,9 @@ WORKDIR /app
 COPY --from=backend-builder --chmod=0755 /out/grok2api /app/grok2api
 COPY --from=frontend-builder /src/frontend/dist /app/frontend/dist
 COPY grok2api_repo/VERSION /app/VERSION
-COPY grok2api_repo/config.yaml /app/config.default.yaml
-COPY grok2api_repo/config.yaml /run/grok2api/config.yaml
+COPY grok2api_repo/config.default.yaml /app/config.default.yaml
+COPY grok2api_repo/config.default.yaml /app/config.yaml
+COPY grok2api_repo/config.default.yaml /run/grok2api/config.yaml
 COPY --chmod=0755 grok2api_repo/docker/entrypoint.sh /usr/local/bin/grok2api-entrypoint
 
 EXPOSE 8000

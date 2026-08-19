@@ -1,0 +1,35 @@
+server:
+  listen: "0.0.0.0:8000"
+  maxBodyBytes: 33554432
+  trustedProxies: []
+  readTimeout: 15m
+  requestTimeout: 2h
+  swaggerEnabled: false
+
+auth:
+  accessTokenTTL: 15m
+  refreshTokenTTL: 720h
+  secureCookies: false
+
+secrets:
+  jwtSecret: "c79435b8e0172bf087e5b6ac0d7381fa28405b637a506c117b3558c9735d4816"
+  credentialEncryptionKey: "V7b8Qk1pW9xZ4rL0mN2tY5vA8cB3eF6hJ9kP1sT4vW8="
+
+bootstrapAdmin:
+  username: "admin"
+  password: "adminpassword123"
+
+database:
+  driver: "sqlite"
+  sqlite:
+    path: "/app/data/backend.db"
+    busyTimeout: 10s
+    journalMode: "WAL"
+
+runtimeStore:
+  driver: "memory"
+
+media:
+  driver: "local"
+  local:
+    path: "/app/data/media"
