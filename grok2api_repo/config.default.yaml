@@ -7,7 +7,7 @@ server:
   swaggerEnabled: false
 
 frontend:
-  staticPath: "/app/frontend/dist"
+  staticPath: "./frontend/dist"
 
 auth:
   accessTokenTTL: 15m
