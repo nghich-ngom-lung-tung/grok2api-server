@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grok Imagine AI - Dashboard & API Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo-icon">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+        </div>
+        <div class="brand-text">
+          <h2>GROK IMAGINE</h2>
+          <span class="badge-pro">PRO GATEWAY</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="dashboard">
+          <i class="fa-solid fa-chart-pie"></i>
+          <span>Tổng Quan</span>
+        </button>
+        <button class="nav-item" data-tab="studio">
+          <i class="fa-solid fa-palette"></i>
+          <span>Imagine Studio</span>
+        </button>
+        <button class="nav-item" data-tab="gallery">
+          <i class="fa-solid fa-images"></i>
+          <span>Lịch Sử & Bộ Sưu Tập</span>
+        </button>
+        <button class="nav-item" data-tab="accounts">
+          <i class="fa-solid fa-users-gear"></i>
+          <span>Kho Tài Khoản</span>
+        </button>
+        <button class="nav-item" data-tab="requests">
+          <i class="fa-solid fa-network-wired"></i>
+          <span>Quản Lý Request & IP</span>
+        </button>
+        <button class="nav-item" data-tab="api-docs">
+          <i class="fa-solid fa-code"></i>
+          <span>Tích Hợp API</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-indicator">
+          <span class="pulse-dot"></span>
+          <div class="status-info">
+            <span class="status-title">Hệ Thống API</span>
+            <span class="status-desc">Đang Hoạt Động (Port 8000)</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Topbar Header -->
+      <header class="topbar">
+        <div class="page-title">
+          <h1 id="tab-heading">Tổng Quan Hệ Thống</h1>
+          <p id="tab-subheading">Theo dõi Quota, sức khỏe kho tài khoản và lịch sử tạo ảnh thời gian thực</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary" id="btn-quick-reg">
+            <i class="fa-solid fa-user-plus"></i> Auto Reg Nick
+          </button>
+          <button class="btn btn-primary" id="btn-quick-draw">
+            <i class="fa-solid fa-sparkles"></i> Tạo Ảnh Mới
+          </button>
+        </div>
+      </header>
+
+      <div class="content-body">
+        <!-- TAB 1: DASHBOARD OVERVIEW -->
+        <section id="tab-dashboard" class="tab-pane active">
+          <!-- Stat Cards -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon icon-purple">
+                <i class="fa-solid fa-id-card"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Tổng Kho Tài Khoản</span>
+                <h3 id="stat-total-accounts">--</h3>
+                <span class="stat-trend positive"><i class="fa-solid fa-check"></i> Sẵn sàng xoay tua</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-cyan">
+                <i class="fa-solid fa-key"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Token SSO Hoạt Động</span>
+                <h3 id="stat-active-tokens">--</h3>
+                <span class="stat-trend neutral"><i class="fa-solid fa-rotate"></i> Load Balancing</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-emerald">
+                <i class="fa-solid fa-image"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Tổng Số Ảnh Đã Tạo</span>
+                <h3 id="stat-total-images">--</h3>
+                <span class="stat-trend positive" id="stat-success-rate">100% Thành công</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-amber">
+                <i class="fa-solid fa-bolt"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Tốc Độ Tạo Trung Bình</span>
+                <h3 id="stat-avg-speed">--</h3>
+                <span class="stat-trend neutral">grok-imagine FLUX</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Info Banner -->
+          <div class="gateway-banner">
+            <div class="banner-content">
+              <div class="banner-badge">OPENAI COMPATIBLE</div>
+              <h2>Cổng API Tạo Ảnh Grok Sẵn Sàng Nhận Request</h2>
+              <p>Hệ thống tự động điều phối hàng chục tài khoản Grok để phục vụ các yêu cầu tạo ảnh từ bên thứ ba (Web, App, Bot Telegram, Cursor) với độ trễ thấp.</p>
+              <div class="banner-endpoints">
+                <code>POST http://127.0.0.1:8000/v1/images/generations</code>
+                <button class="btn-copy-mini" onclick="copyText('http://127.0.0.1:8000/v1/images/generations')"><i class="fa-solid fa-copy"></i> Copy</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Generations Section -->
+          <div class="section-card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-clock-rotate-left"></i> Ảnh Được Tạo Gần Đây</h3>
+              <button class="btn-text" onclick="switchTab('gallery')">Xem tất cả <i class="fa-solid fa-arrow-right"></i></button>
+            </div>
+            <div class="recent-gallery" id="recent-gallery-grid">
+              <div class="empty-state">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <p>Đang tải dữ liệu lịch sử...</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 2: IMAGINE STUDIO -->
+        <section id="tab-studio" class="tab-pane">
+          <div class="studio-grid">
+            <div class="studio-controls section-card">
+              <h3><i class="fa-solid fa-wand-magic"></i> Tạo Ảnh Bằng Grok AI</h3>
+              <p class="section-desc">Nhập mô tả chi tiết bằng tiếng Việt hoặc tiếng Anh để Grok vẽ ảnh chất lượng cao.</p>
+
+              <form id="studio-form">
+                <div class="form-group">
+                  <label for="prompt-input">Prompt (Mô tả bức ảnh)</label>
+                  <textarea id="prompt-input" rows="4" placeholder="Ví dụ: A cute cyberpunk baby dragon sleeping on gold coins, 8k resolution, cinematic lighting, ultra-detailed..." required></textarea>
+                </div>
+
+                <div class="prompt-suggestions">
+                  <span>Gợi ý mẫu:</span>
+                  <button type="button" class="tag-btn" onclick="setPrompt('Một chú mèo phi hành gia mặc áo giáp neon đứng trên sao hỏa, 8k resolution')">🐱 Mèo phi hành gia</button>
+                  <button type="button" class="tag-btn" onclick="setPrompt('Cyberpunk samurai warrior in futuristic Tokyo, neon reflections, ultra-realistic')">⚔️ Cyberpunk Samurai</button>
+                  <button type="button" class="tag-btn" onclick="setPrompt('A magical floating island with waterfalls and glowing fantasy crystals at sunset')">🏰 Đảo bay ma thuật</button>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Model</label>
+                    <select id="model-select">
+                      <option value="grok-imagine-image">grok-imagine-image (Flux 1)</option>
+                      <option value="grok-2-image">grok-2-image (HD Quality)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block btn-lg" id="btn-generate">
+                  <i class="fa-solid fa-sparkles"></i> Bắt Đầu Vẽ Ảnh
+                </button>
+              </form>
+            </div>
+
+            <!-- Preview Card -->
+            <div class="studio-preview section-card">
+              <h3><i class="fa-solid fa-eye"></i> Kết Quả Tạo Ảnh</h3>
+              <div class="preview-stage" id="preview-stage">
+                <div class="preview-placeholder">
+                  <i class="fa-solid fa-image"></i>
+                  <p>Ảnh sau khi tạo sẽ hiển thị tại đây</p>
+                  <span>Thời gian tạo trung bình: 10 - 20 giây</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 3: GALLERY & HISTORY -->
+        <section id="tab-gallery" class="tab-pane">
+          <div class="section-card">
+            <div class="card-header">
+              <div>
+                <h3><i class="fa-solid fa-layer-group"></i> Toàn Bộ Lịch Sử Tạo Ảnh</h3>
+                <p class="section-desc">Lưu trữ tất cả các bức ảnh đã được sinh qua Web UI và các cổng API.</p>
+              </div>
+              <button class="btn btn-secondary" onclick="loadHistoryData()">
+                <i class="fa-solid fa-rotate-right"></i> Làm Mới
+              </button>
+            </div>
+
+            <div class="gallery-masonry" id="full-gallery-grid">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 4: ACCOUNT POOL & AUTO-QUOTA -->
+        <section id="tab-accounts" class="tab-pane">
+          <!-- Pool Quota Metrics Grid -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon icon-emerald">
+                <i class="fa-solid fa-battery-three-quarters"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Tổng Quota Còn Lại</span>
+                <h3 id="pool-stat-remaining">--</h3>
+                <span class="stat-trend positive" id="pool-stat-utilization">0% Sử dụng</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-cyan">
+                <i class="fa-solid fa-server"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Tổng Sức Chứa Pool</span>
+                <h3 id="pool-stat-capacity">--</h3>
+                <span class="stat-trend neutral">~25 ảnh/acc/2h</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-purple">
+                <i class="fa-solid fa-heart-pulse"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Sức Khỏe Tài Khoản</span>
+                <h3 id="pool-stat-healthy">--</h3>
+                <span class="stat-trend positive" id="pool-stat-breakdown">50 Khỏe | 0 Tạm nghỉ</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-amber">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Tự Động Reset Quota</span>
+                <h3>2 Giờ</h3>
+                <span class="stat-trend neutral">Rolling Window</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <div class="card-header">
+              <div>
+                <h3><i class="fa-solid fa-server"></i> Danh Sách Kho Tài Khoản (Token Pool & Live Quota)</h3>
+                <p class="section-desc">Hệ thống tự động tính toán số lượt tạo ảnh còn lại và tự động xoay tua thông minh.</p>
+              </div>
+              <div class="card-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn btn-secondary" id="btn-health-check" onclick="triggerHealthCheck()" title="Quét kiểm tra sống/chết tất cả tài khoản">
+                  <i class="fa-solid fa-stethoscope"></i> Quét Sức Khỏe
+                </button>
+                <button class="btn btn-secondary" id="btn-clean-dead" onclick="cleanDeadTokens()" title="Xóa bỏ các token đã hết hạn hoặc hỏng">
+                  <i class="fa-solid fa-trash-can"></i> Dọn Token Chết
+                </button>
+                <button class="btn btn-secondary" id="btn-keep-alive" onclick="triggerKeepAlive()" title="Gửi tín hiệu nuôi và gia hạn session token">
+                  <i class="fa-solid fa-heart-pulse"></i> Nuôi Session (Keep-Alive)
+                </button>
+                <button class="btn btn-secondary" id="btn-relogin" onclick="triggerAutoRelogin()" title="Tự động đăng nhập lại nick cũ để lấy Session SSO mới">
+                  <i class="fa-solid fa-key"></i> Re-login Lấy Token Mới
+                </button>
+                <button class="btn btn-secondary" onclick="resetAllQuotas()" title="Reset lại 100% quota cho toàn bộ tài khoản">
+                  <i class="fa-solid fa-rotate-left"></i> Reset Quota
+                </button>
+                <div style="display: flex; align-items: center; gap: 6px; background: rgba(0, 245, 160, 0.08); padding: 2px 6px; border-radius: 8px; border: 1px solid rgba(0, 245, 160, 0.25);">
+                  <span style="font-size: 12px; color: #a7f3d0; font-weight: 600; padding-left: 2px;">SL:</span>
+                  <input type="number" id="reg-count-input" value="3" min="1" max="50" style="width: 52px; padding: 5px 6px; font-size: 13px; font-weight: 700; font-family: 'JetBrains Mono', monospace; background: rgba(5, 15, 10, 0.9); border: 1px solid rgba(0, 245, 160, 0.4); border-radius: 6px; color: #00f5a0; text-align: center;">
+                  <button class="btn btn-primary" id="btn-reg-accounts" onclick="triggerAutoReg()" style="padding: 7px 12px; font-size: 13px;">
+                    <i class="fa-solid fa-plus"></i> Auto Reg
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>STT</th>
+                    <th>Email Tài Khoản</th>
+                    <th>Mật Khẩu</th>
+                    <th>Loại</th>
+                    <th style="min-width: 170px;">Quota Khung 2H</th>
+                    <th>Đã Tạo</th>
+                    <th>Sức Khỏe</th>
+                    <th>Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody id="accounts-tbody">
+                  <!-- Rendered via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 5: REQUESTS & TRAFFIC MONITOR -->
+        <section id="tab-requests" class="tab-pane">
+          <!-- Request Stats Grid -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon icon-emerald">
+                <i class="fa-solid fa-circle-check"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">HTTP 200 (Thành Công)</span>
+                <h3 id="req-stat-200">0</h3>
+                <span class="stat-trend positive">Success Responses</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-amber">
+                <i class="fa-solid fa-circle-question"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">HTTP 404 (Không Tìm Thấy)</span>
+                <h3 id="req-stat-404">0</h3>
+                <span class="stat-trend" style="color: #f59e0b;">Not Found Paths</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon" style="background: rgba(244, 63, 94, 0.15); color: #f43f5e;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Lỗi 4xx / 5xx</span>
+                <h3 id="req-stat-errors">0</h3>
+                <span class="stat-trend" style="color: #f43f5e;">Errors & Exceptions</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-purple">
+                <i class="fa-solid fa-network-wired"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">IP Đã Kết Nối</span>
+                <h3 id="req-stat-ips">0</h3>
+                <span class="stat-trend positive">Unique Client IPs</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Request Logs Table Card -->
+          <div class="section-card">
+            <div class="card-header">
+              <div>
+                <h3><i class="fa-solid fa-list-check"></i> Lịch Sử Chi Tiết Mọi Request (Real-time Logs)</h3>
+                <p class="section-desc">Theo dõi chính xác Client IP, Mã phản hồi (200, 404, 500), Thời gian phản hồi và User-Agent.</p>
+              </div>
+              <div class="card-actions" style="display: flex; gap: 10px;">
+                <button class="btn btn-secondary" onclick="loadRequestLogsData()">
+                  <i class="fa-solid fa-rotate-right"></i> Làm Mới
+                </button>
+                <button class="btn btn-secondary" style="color: #f43f5e; border-color: rgba(244, 63, 94, 0.3);" onclick="clearRequestLogs()">
+                  <i class="fa-solid fa-trash"></i> Xóa Logs
+                </button>
+              </div>
+            </div>
+
+            <!-- Filter Controls -->
+            <div class="table-filters" style="display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap;">
+              <div style="flex: 1; min-width: 200px;">
+                <input type="text" id="req-search-input" placeholder="🔍 Tìm kiếm theo IP, đường dẫn URL, User-Agent..." oninput="filterRequestLogs()">
+              </div>
+              <div style="width: 180px;">
+                <select id="req-status-filter" onchange="filterRequestLogs()">
+                  <option value="all">Tất cả Status Code</option>
+                  <option value="2xx">🟢 2xx OK (Thành công)</option>
+                  <option value="404">🟠 404 (Not Found)</option>
+                  <option value="4xx">🟡 4xx (Client Error)</option>
+                  <option value="5xx">🔴 5xx (Server Error)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Thời Gian</th>
+                    <th>Client IP</th>
+                    <th>Method</th>
+                    <th>Đường Dẫn (Path)</th>
+                    <th>Model Đã Gọi</th>
+                    <th>Status Code</th>
+                    <th>Độ Trễ</th>
+                    <th>User-Agent / Chi Tiết</th>
+                  </tr>
+                </thead>
+                <tbody id="request-logs-tbody">
+                  <!-- Rendered via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 6: API DOCS & INTEGRATION -->
+        <section id="tab-api-docs" class="tab-pane">
+          <div class="docs-grid">
+            <div class="section-card">
+              <h3><i class="fa-solid fa-terminal"></i> Hướng Dẫn Tích Hợp Cho Bên Thứ 3</h3>
+              <p class="section-desc">Server cung cấp đầy đủ các endpoint chuẩn OpenAI để kết nối vào bất kỳ hệ thống nào.</p>
+
+              <div class="doc-block">
+                <h4>1. Endpoint Tạo Ảnh (Chuẩn OpenAI DALL-E)</h4>
+                <div class="code-box">
+                  <code>POST http://127.0.0.1:8000/v1/images/generations</code>
+                </div>
+              </div>
+
+              <div class="doc-block">
+                <h4>2. Mẫu gọi bằng Python (requests / openai sdk)</h4>
+                <pre class="code-snippet"><code>import requests
+
+url = "http://127.0.0.1:8000/v1/images/generations"
+payload = {
+    "model": "grok-imagine-image",
+    "prompt": "Một chú mèo phi hành gia mặc áo giáp neon đứng trên sao hỏa",
+    "size": "1024x1024"
+}
+
+response = requests.post(url, json=payload)
+data = response.json()
+print("Link ảnh tạo được:", data["data"][0]["url"])</code></pre>
+                <button class="btn-copy-code" onclick="copyCode(this)"><i class="fa-solid fa-copy"></i> Copy Code</button>
+              </div>
+
+              <div class="doc-block">
+                <h4>3. Mẫu gọi bằng cURL (Terminal / Postman)</h4>
+                <pre class="code-snippet"><code>curl -X POST http://127.0.0.1:8000/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "grok-imagine-image",
+    "prompt": "A cyber samurai warrior in futuristic Tokyo, 8k resolution"
+  }'</code></pre>
+                <button class="btn-copy-code" onclick="copyCode(this)"><i class="fa-solid fa-copy"></i> Copy cURL</button>
+              </div>
+            </div>
+
+            <div class="section-card">
+              <h3><i class="fa-solid fa-globe"></i> Mở Public Cho Bên Ngoài Gọi Qua Internet</h3>
+              <p class="section-desc">Để người khác ở ngoài mạng internet có thể gọi API vào máy bạn miễn phí:</p>
+
+              <div class="step-guide">
+                <div class="guide-step">
+                  <div class="step-number">1</div>
+                  <div class="step-text">
+                    <strong>Chạy Cloudflare Tunnel trên máy:</strong>
+                    <p>Mở PowerShell và gõ lệnh:</p>
+                    <code>cloudflared tunnel --url http://localhost:8000</code>
+                  </div>
+                </div>
+                <div class="guide-step">
+                  <div class="step-number">2</div>
+                  <div class="step-text">
+                    <strong>Nhận đường link HTTPS công khai:</strong>
+                    <p>Cloudflare sẽ cấp một link dạng <code>https://xxx.trycloudflare.com</code>.</p>
+                  </div>
+                </div>
+                <div class="guide-step">
+                  <div class="step-number">3</div>
+                  <div class="step-text">
+                    <strong>Cung cấp Endpoint cho bên thứ 3:</strong>
+                    <p>Bên ngoài chỉ cần gửi request vào <code>https://xxx.trycloudflare.com/v1/images/generations</code> là tạo ảnh được ngay!</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Image Modal Viewer -->
+  <div class="modal" id="image-modal">
+    <div class="modal-backdrop" onclick="closeModal()"></div>
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button>
+      <img id="modal-img" src="" alt="Preview">
+      <div class="modal-info">
+        <p id="modal-prompt"></p>
+        <div class="modal-actions">
+          <a id="modal-download" class="btn btn-primary" target="_blank" download><i class="fa-solid fa-download"></i> Tải Ảnh HD</a>
+          <button class="btn btn-secondary" id="modal-copy-link"><i class="fa-solid fa-link"></i> Copy Link</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

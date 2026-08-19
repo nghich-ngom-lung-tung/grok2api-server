@@ -1,27 +1,63 @@
-# Environment
+# Environment & Config
 .env
+*.env
+config.local.yaml
 
-# Secrets & runtime data
+# Secrets & Accounts (Bảo mật tài khoản & Token)
 keys/
+keys/*
+auths/
 pending_codes.json
+outlook_tokens.json
 .action_id.cache
+.processed_watermarks.txt
+data/
 
-# Logs
-*.log
-*.err.log
+# Databases & SQLite
+*.db
+*.sqlite
+*.sqlite3
+grok2api_repo/data/
 
-# Temp
-.temp/
+# Proxies (Danh sách Proxy cá nhân)
+proxies.txt
+good_proxies.txt
+
+# Media & Generated Images (Ảnh đã tạo)
+static/generated_images/
+*.jpg
+*.jpeg
+*.png
+!grok2api_repo/frontend/src/assets/*
+!static/logo.png
+
+# Build artifacts & Binaries
+grok2api_repo/backend/grok2api
+grok2api_repo/backend/grok2api.exe
+*.exe
+dist/
+build/
+bin/
+
+# Node & Python Dependencies
+node_modules/
+grok2api_repo/frontend/node_modules/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 .venv/
 venv/
+env/
+.uv/
 
-# OS
+# Logs & Debug
+*.log
+*.err.log
+logs/
+
+# IDE & OS
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
-outlook_tokens.json
+.fleet/

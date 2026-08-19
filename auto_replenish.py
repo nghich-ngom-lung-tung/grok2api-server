@@ -10,14 +10,27 @@ Grok 账号自动补位系统 v2
   python auto_replenish.py --min 3 --rotate-region  # 保持 3 个，跨区域切换
   python auto_replenish.py --check                  # 仅检查状态
 """
-import os, sys, time, json, subprocess, argparse, random
+import certifi, shutil, os, sys, time, json, subprocess, argparse, random
+
+_safe_ca_path = r"C:\Users\Admin\cacert.pem"
+try:
+    if not os.path.exists(_safe_ca_path):
+        with open(certifi.where(), "rb") as _f1, open(_safe_ca_path, "wb") as _f2:
+            _f2.write(_f1.read())
+    certifi.where = lambda: _safe_ca_path
+    os.environ["SSL_CERT_FILE"] = _safe_ca_path
+    os.environ["REQUESTS_CA_BUNDLE"] = _safe_ca_path
+    os.environ["CURL_CA_BUNDLE"] = _safe_ca_path
+except Exception:
+    pass
+
 from datetime import datetime, timezone
 import requests as _requests
 import urllib3
 urllib3.disable_warnings()
 
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 
 def _utc_to_ts(utc_str):
     """解析 UTC ISO 时间戳 → Unix timestamp"""
@@ -57,8 +70,9 @@ except ImportError:
 try:
     from clash_rotator import (random_switch, switch_region, get_current_ip,
                                 health as clash_health, snapshot, restore)
-    HAS_CLASH = True
-except ImportError:
+    _h = clash_health()
+    HAS_CLASH = _h.get("ok", False)
+except Exception:
     HAS_CLASH = False
 
 
@@ -120,7 +134,7 @@ def _file_lines(path):
         return []
 
 
-def register_one(script, extra_args, max_retries=5):
+def register_one(script, extra_args, max_retries=5, headless=False):
     """注册 1 个账号，失败换 IP 重试。返回 (ok: bool, sso_token: str|None, email: str|None)。
     注意：不使用 probe_ip()（requests 库会触发 CF 拦截），
     直接跑 grok.py（curl_cffi 可绕过 CF），从 stdout 判断是否被拦截。"""
@@ -129,7 +143,7 @@ def register_one(script, extra_args, max_retries=5):
             print(f"  [RETRY] 换 IP 重试 ({attempt}/{max_retries})...")
             find_clean_ip(max_attempts=5)
         else:
-            ip = get_current_ip()
+            ip = get_current_ip() if HAS_CLASH else "Direct Connection"
             print(f"  [IP] {ip} — 直接运行 grok.py（跳过探测，避免触发 CF 拦截）")
 
         # 记录注册前 grok.txt 行数
@@ -142,7 +156,7 @@ def register_one(script, extra_args, max_retries=5):
                 cmd, cwd=SCRIPT_DIR,
                 capture_output=True, text=True,
                 encoding="utf-8", errors="replace",
-                timeout=180
+                timeout=300
             )
         except subprocess.TimeoutExpired:
             print(f"  [TIMEOUT] 注册超时")
@@ -226,21 +240,18 @@ def count_available():
     return len(available), available
 
 
-def run_registration(count=3, rotate_region=False, use_free=False):
+def run_registration(count=3, rotate_region=False, use_free=False, email_provider=None, headless=False):
     """逐个注册账号，每个号失败自动换 IP 重试。返回 (success_count, sso_list)。"""
+    provider = str(email_provider or os.getenv("EMAIL_PROVIDER") or "luckmail").strip().lower()
     script = GROK_FREE if use_free else GROK_REG
-    script_name = "grok_free.py (DrissionPage)" if use_free else "grok.py (YesCaptcha)"
+    script_name = "grok_free.py (DrissionPage)" if use_free else f"grok.py (YesCaptcha - provider: {provider})"
     print(f"\n{'='*50}")
     print(f"[STEP 1/3] 逐个注册 {count} 个账号 — {script_name}")
     print(f"{'='*50}")
 
-    if use_free:
-        # DrissionPage 浏览器模式：自带 CF 绕过能力，不需要 IP 探测
-        extra_args = ["--no-rotate", "--count", "1", "--min-delay", "8", "--max-delay", "15"]
-        timeout = 300  # 浏览器单个号 5 分钟
-    else:
-        extra_args = ["--threads", "1", "--email-provider", "luckmail"]
-        timeout = 180
+    extra_args = ["--email-provider", provider]
+    if headless and use_free:
+        extra_args.append("--headless")
 
     success = 0
     sso_list = []
@@ -248,8 +259,7 @@ def run_registration(count=3, rotate_region=False, use_free=False):
         tag = f"[{idx+1}/{count}]"
         print(f"\n{tag} 开始注册第 {idx+1} 个...")
         if use_free:
-            # 浏览器模式：直接跑，换 IP 交给 grok_free 的 --rotate-interval（但我们是 --no-rotate）
-            ok, sso, email = register_one_free(script, extra_args, timeout)
+            ok, sso, email = register_one_free(script, extra_args + ["--count", "1"], timeout=300)
         else:
             ok, sso, email = register_one(script, extra_args)
         if ok:
@@ -258,10 +268,12 @@ def run_registration(count=3, rotate_region=False, use_free=False):
                 sso_list.append({"sso": sso, "email": email})
             print(f"{tag} ✅ ({success}/{count} 成功)")
             time.sleep(3)
-        else:
-            print(f"{tag} ❌ 注册失败，跳过")
-
     print(f"\n注册结束: {success}/{count} 成功")
+    if sys.platform == "win32":
+        try:
+            subprocess.run("taskkill /F /IM chrome.exe /T", shell=True, capture_output=True)
+        except Exception:
+            pass
     return success, sso_list
 
 
@@ -303,11 +315,11 @@ def register_one_free(script, extra_args, timeout=300):
                 print(f"  [OK] {email} SSO={sso[:15]}...")
                 return True, sso, email
 
-    if result.returncode == 0:
-        print(f"  [OK] 注册进程返回 0")
-        return True, None, None
-
-    print(f"  [FAIL] 注册返回 {result.returncode}")
+    print(f"  [FAIL] 注册进程完成但未产生 SSO（Returncode {result.returncode}）")
+    if result.stdout.strip():
+        print(f"  [STDOUT] {result.stdout.strip()[-300:]}")
+    if result.stderr.strip():
+        print(f"  [STDERR] {result.stderr.strip()[-300:]}")
     return False, None, None
 
 
@@ -560,7 +572,7 @@ def count_web_available():
         return 0, []
 
 
-def replenish(min_accounts=2, rotate_region=False, use_free=False):
+def replenish(min_accounts=2, rotate_region=False, use_free=False, email_provider=None, headless=False):
     """一次完整补位周期"""
     count, emails = count_available()
     web_count, web_emails = count_web_available()
@@ -591,7 +603,7 @@ def replenish(min_accounts=2, rotate_region=False, use_free=False):
 
     try:
         # Step 1: 注册 + 收集 SSO
-        reg_ok, sso_list = run_registration(to_register, rotate_region=rotate_region, use_free=use_free)
+        reg_ok, sso_list = run_registration(to_register, rotate_region=rotate_region, use_free=use_free, email_provider=email_provider, headless=headless)
         if not reg_ok:
             print("[AUTO] ❌ 注册失败，跳过后续步骤")
             return False
@@ -654,7 +666,11 @@ def main():
     parser.add_argument("--check", action="store_true", help="仅检查状态")
     parser.add_argument("--rotate-region", action="store_true", help="跨区域切换 IP（而非随机节点）")
     parser.add_argument("--refresh-only", action="store_true", help="仅刷新 token，不注册")
-    parser.add_argument("--free", action="store_true", help="使用免费 DrissionPage 注册（默认用 YesCaptcha）")
+    parser.add_argument("--free", action="store_true", default=True, help="使用免费 DrissionPage 注册")
+    parser.add_argument("--no-free", dest="free", action="store_false", help="使用 YesCaptcha 注册")
+    parser.add_argument("--email-provider", choices=["gptmail", "luckmail", "mailtm", "gmail", "tmail", "fce", "outlook", "sfrankie"], default=os.getenv("EMAIL_PROVIDER", "mailtm"), help="邮箱提供商")
+    parser.add_argument("--headless", action="store_true", default=True, help="无头模式（隐藏 Chrome 窗口）")
+    parser.add_argument("--no-headless", dest="headless", action="store_false", help="显示 Chrome 窗口")
     args = parser.parse_args()
 
     if args.check:
@@ -687,11 +703,11 @@ def main():
         return
 
     if args.daemon:
-        print(f"[DAEMON] 每 {args.daemon}s 检查 | 最少保持 {args.min} 个账号 | "
+        print(f"[DAEMON] 每 {args.daemon}s 检查 | 最少保持 {args.min} 个账号 | 邮箱提供商={args.email_provider} | "
               f"区域轮换={'✅' if args.rotate_region else '❌'}")
         while True:
             try:
-                replenish(args.min, rotate_region=args.rotate_region, use_free=args.free)
+                replenish(args.min, rotate_region=args.rotate_region, use_free=args.free, email_provider=args.email_provider, headless=args.headless)
             except KeyboardInterrupt:
                 print("\n[DAEMON] 退出")
                 break
@@ -701,7 +717,7 @@ def main():
                 traceback.print_exc()
             time.sleep(args.daemon)
     else:
-        replenish(args.min, rotate_region=args.rotate_region, use_free=args.free)
+        replenish(args.min, rotate_region=args.rotate_region, use_free=args.free, email_provider=args.email_provider, headless=args.headless)
 
 
 if __name__ == "__main__":

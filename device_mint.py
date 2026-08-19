@@ -13,12 +13,20 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 CLIENT_ID = "b1a00492-073a-47ea-816f-4c329264a828"
 SCOPE = "openid profile email offline_access grok-cli:access api:access"
-PROXY = os.getenv("GROK_PROXY") or "http://127.0.0.1:7897"
+_env_proxy = os.getenv("GROK_PROXY", "").strip()
+PROXY = _env_proxy if _env_proxy else None
+
+
+def save_auth(email, cpa_data):
+    from sso_to_cpa import save_auth as _sa
+    return _sa(email, cpa_data)
 
 
 def _http_json(url, method="GET", form=None, timeout=40):
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({"https": PROXY, "http": PROXY}))
+    handlers = []
+    if PROXY:
+        handlers.append(urllib.request.ProxyHandler({"https": PROXY, "http": PROXY}))
+    opener = urllib.request.build_opener(*handlers)
     data = urllib.parse.urlencode(form).encode() if form else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -39,39 +47,53 @@ def _http_json(url, method="GET", form=None, timeout=40):
             return e.code, body
 
 
-async def _browser_authorize(vuc, sso_jwt):
-    """有头 Chrome + 代理, 注入 SSO cookie, 自动点授权按钮"""
-    from patchright.async_api import async_playwright
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, channel="chrome",
-            proxy={"server": PROXY},
-            args=["--disable-blink-features=AutomationControlled"])
-        ctx = await browser.new_context(viewport={"width": 1000, "height": 700})
-        await ctx.add_cookies([{
-            "name": "sso", "value": sso_jwt, "domain": ".x.ai", "path": "/",
-        }])
-        page = await ctx.new_page()
+def _browser_authorize_drission(vuc, sso_jwt, email=""):
+    """DrissionPage 浏览器 + 注入 SSO cookie, 自动点授权按钮"""
+    from DrissionPage import ChromiumPage, ChromiumOptions
+    co = ChromiumOptions()
+    co.set_argument('--no-sandbox')
+    co.set_argument('--disable-gpu')
+    co.set_argument('--window-position=-32000,-32000')
+    temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_chrome")
+    co.set_user_data_path(temp_dir)
+    page = ChromiumPage(co)
+    try:
+        print(f"  [{email}] [DrissionPage] 注入 SSO cookie...")
+        page.get("https://accounts.x.ai/sign-in")
+        time.sleep(2)
+        page.set.cookies({"name": "sso", "value": sso_jwt, "domain": ".x.ai", "path": "/"})
+        page.set.cookies({"name": "sso-rw", "value": sso_jwt, "domain": ".x.ai", "path": "/"})
+        page.set.cookies({"name": "sso", "value": sso_jwt, "domain": "accounts.x.ai", "path": "/"})
+        page.set.cookies({"name": "sso-rw", "value": sso_jwt, "domain": "accounts.x.ai", "path": "/"})
+
+        print(f"  [{email}] [DrissionPage] 导航至 Device 授权 URL...")
+        page.get(vuc)
+        time.sleep(3)
+
+        for attempt in range(15):
+            curr_url = page.url
+            if "/device/done" in curr_url or "success" in curr_url or "approved" in curr_url:
+                print(f"  [{email}] [DrissionPage] ✅ 授权成功!")
+                return True
+            page.run_js('''
+            var btns = document.querySelectorAll('button,[role=button]');
+            for(var i=0; i<btns.length; i++){
+                var t = (btns[i].innerText||'').toLowerCase();
+                if(t.indexOf('continue')>=0 || t.indexOf('allow')>=0 || t.indexOf('agree')>=0 || t.indexOf('authorize')>=0 || t.indexOf('继续')>=0 || t.indexOf('允许')>=0 || t.indexOf('同意')>=0){
+                    btns[i].click(); break;
+                }
+            }
+            ''')
+            time.sleep(2)
+        return False
+    except Exception as e:
+        print(f"  [{email}] Authorize 异常: {e}")
+        return False
+    finally:
         try:
-            await page.goto(vuc, timeout=40000, wait_until="domcontentloaded")
-            for _ in range(20):
-                await asyncio.sleep(2)
-                if "/device/done" in page.url:
-                    return True
-                for sel in ["button:has-text('继续')", "button:has-text('Allow')",
-                            "button:has-text('允许')", "button:has-text('Continue')",
-                            "button[type=submit]"]:
-                    try:
-                        btn = await page.query_selector(sel)
-                        if btn and await btn.is_visible():
-                            await btn.click()
-                            break
-                    except Exception:
-                        pass
+            page.quit()
         except Exception:
             pass
-        finally:
-            await browser.close()
-    return False
 
 
 def sso_to_device(sso_token, email=""):
@@ -85,10 +107,10 @@ def sso_to_device(sso_token, email=""):
             return None
         dc = p["device_code"]
         vuc = p.get("verification_uri_complete")
-        ok = asyncio.run(_browser_authorize(vuc, sso_token))
+        ok = _browser_authorize_drission(vuc, sso_token, email=email)
         if not ok:
             print("  [DEVICE] 授权未确认, 继续轮询")
-        deadline = time.time() + 90
+        deadline = time.time() + 60
         interval = max(int(p.get("interval", 5)), 1)
         while time.time() < deadline:
             time.sleep(interval)

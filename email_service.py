@@ -13,12 +13,44 @@
 
 import json
 import os
+import sys
 import re
 import random
+import time
 import string as _string
 import threading
-import urllib.parse
-from typing import Any, Dict, List, Optional
+
+import certifi, shutil
+try:
+    _safe_ca_path = r"C:\Users\Admin\cacert.pem"
+    if not os.path.exists(_safe_ca_path):
+        with open(certifi.where(), "rb") as _f1, open(_safe_ca_path, "wb") as _f2:
+            _f2.write(_f1.read())
+    certifi.where = lambda: _safe_ca_path
+    os.environ["SSL_CERT_FILE"] = _safe_ca_path
+    os.environ["REQUESTS_CA_BUNDLE"] = _safe_ca_path
+    os.environ["CURL_CA_BUNDLE"] = _safe_ca_path
+except Exception:
+    pass
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+import certifi, shutil
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+try:
+    certifi.where().encode("ascii")
+except Exception:
+    _orig_cacert = certifi.where()
+    _safe_ca_path = r"C:\Users\Public\cacert.pem"
+    try:
+        shutil.copy(_orig_cacert, _safe_ca_path)
+        certifi.where = lambda: _safe_ca_path
+    except Exception:
+        pass
 
 from curl_cffi import requests
 
@@ -119,8 +151,7 @@ class MailTMClient:
 
     def __init__(self, proxies: Any = None):
         self.session = std_requests.Session()
-        if proxies:
-            self.session.proxies.update(proxies)
+        # mail.tm api 不受 IP 限制，直接连接可 100% 避免 Proxy Bad Request
         self.session.headers.update({
             "User-Agent": UA,
             "Accept": "application/json",
@@ -134,29 +165,53 @@ class MailTMClient:
 
     def create_email(self) -> str:
         """创建临时邮箱，返回邮箱地址"""
-        # 1. 获取可用域名
-        r = self.session.get(f"{self.BASE}/domains", timeout=15)
-        r.raise_for_status()
-        data = r.json()
-        # API 有时返回 list，有时返回 hydra:Collection 包装
-        if isinstance(data, list):
-            domains = data
-        else:
-            domains = data.get("hydra:member", [])
-        if not domains:
-            raise RuntimeError("mail.tm: 无可用域名")
-        domain = domains[0]["domain"]
-
-        # 2. 注册账号
         self._password = "Gk" + "".join(random.choices(_string.ascii_letters + _string.digits, k=14)) + "!1"
-        self.address = f"{self._random_user()}@{domain}"
-        r2 = self.session.post(f"{self.BASE}/accounts", json={
-            "address": self.address,
-            "password": self._password,
-        }, timeout=15)
-        if r2.status_code != 201:
-            raise RuntimeError(f"mail.tm 创建账号失败: {r2.status_code} {r2.text[:200]}")
-        account = r2.json()
+        account = None
+        used_base = None
+
+        for base_url in ["https://api.mail.tm", "https://api.mail.gw"]:
+            domains = []
+            try:
+                r = self.session.get(f"{base_url}/domains", timeout=10)
+                if r.status_code == 200:
+                    data = r.json()
+                    fetched = data if isinstance(data, list) else data.get("hydra:member", [])
+                    for item in fetched:
+                        d = item.get("domain") if isinstance(item, dict) else item
+                        if d and d not in domains:
+                            # Ưu tiên đưa emalupe.com lên đầu
+                            if "emalupe.com" in d:
+                                domains.insert(0, d)
+                            else:
+                                domains.append(d)
+            except Exception:
+                pass
+            if not domains:
+                continue
+
+            for attempt in range(3):
+                domain = random.choice(domains)
+                self.address = f"{self._random_user()}@{domain}"
+                try:
+                    r2 = self.session.post(f"{base_url}/accounts", json={
+                        "address": self.address,
+                        "password": self._password,
+                    }, timeout=15)
+                    if r2.status_code == 201:
+                        account = r2.json()
+                        used_base = base_url
+                        break
+                    elif r2.status_code == 429:
+                        time.sleep(1)
+                except Exception:
+                    pass
+            if account:
+                break
+
+        if not account or not used_base:
+            raise RuntimeError("MailTM / MailGW: 创建账号失败")
+
+        self.BASE = used_base
         self.address = account["address"]
 
         # 3. 获取 JWT token
@@ -775,7 +830,7 @@ class FCEInbox:
     可能拒投, 适合对域名不敏感的平台。
     """
 
-    DOMAINS = ["ditapi.info", "fce.email"]  # ditmail.info 免费档不支持 (403)
+    DOMAINS = ["ditapi.info", "ditcloud.info", "ditlearn.info", "ditplay.info", "nimbusreach.info", "haloforge.info"]
 
     def __init__(self, proxies: Any = None):
         self.proxies = proxies
@@ -944,10 +999,12 @@ class OutlookInbox:
             conn.select("INBOX")
             _, data = conn.uid("SEARCH", None,
                                f"UID {self._last_uid + 1}:*" if self._last_uid else "ALL")
-            uids = [u for u in data[0].split() if u]
-            if not uids:
+            all_uids = [int(u) for u in data[0].split() if u]
+            new_uids = [u for u in all_uids if u > self._last_uid]
+            if not new_uids:
                 conn.logout()
                 return None
+            uids = [str(u).encode() for u in new_uids]
             import email as _email_mod
             texts = []
             for uid in uids[-3:]:  # 只读最近 3 封
@@ -996,6 +1053,9 @@ class GmailIMAPClient:
     def _connect(self):
         import imaplib
         if not self._base_email or not self._app_password:
+            self._base_email = str(os.getenv("GMAIL_BASE_EMAIL") or "cursorojt49@gmail.com").strip()
+            self._app_password = str(os.getenv("GMAIL_APP_PASSWORD") or "knlm cpwg xjbi jnrd").strip()
+        if not self._base_email or not self._app_password:
             raise RuntimeError("缺少 GMAIL_BASE_EMAIL / GMAIL_APP_PASSWORD 环境变量")
         if self._imap:
             try:
@@ -1003,18 +1063,23 @@ class GmailIMAPClient:
                 return
             except Exception:
                 pass
-        self._imap = imaplib.IMAP4_SSL(self._imap_host, self._imap_port)
+        self._imap = imaplib.IMAP4_SSL(self._imap_host, self._imap_port, timeout=30)
         self._imap.login(self._base_email, self._app_password)
         self._imap.select("INBOX")
 
     def create_email(self) -> str:
+        if "@" not in self._base_email:
+            self._base_email = str(os.getenv("GMAIL_BASE_EMAIL") or "cursorojt49@gmail.com").strip()
+        parts = self._base_email.split("@")
+        user_part = parts[0] if len(parts) > 0 else "cursorojt49"
+        domain_part = parts[1] if len(parts) > 1 else "gmail.com"
         tag = "".join(random.choice(_string.ascii_lowercase + _string.digits) for _ in range(8))
-        self.email = f"{self._base_email.split('@')[0]}+grok{tag}@{self._base_email.split('@')[1]}"
+        self.email = f"{user_part}+grok{tag}@{domain_part}"
         # 连 IMAP 获取当前最新 UID 作为基准
         try:
             self._connect()
             _, data = self._imap.uid("SEARCH", None, "ALL")
-            uids = data[0].split()
+            uids = data[0].split() if (data and data[0]) else []
             self._last_uid = int(uids[-1]) if uids else 0
         except Exception:
             self._last_uid = 0
@@ -1024,42 +1089,103 @@ class GmailIMAPClient:
         import email as _email_mod
         try:
             self._connect()
-            # 只搜 From x.ai 的邮件（避免 Windsurf 等干扰）
-            _, data = self._imap.uid("SEARCH", None, f'(FROM "x.ai" UID {self._last_uid + 1}:*)')
-            new_uids = data[0].split()
+            _, data = self._imap.uid("SEARCH", None, "ALL")
+            all_uids = [int(u) for u in data[0].split()] if (data and data[0]) else []
+            new_uids = [u for u in all_uids if u > self._last_uid]
             if not new_uids:
                 return None
             # 取最新一封
             latest_uid = int(new_uids[-1])
             self._last_uid = max(self._last_uid, latest_uid)
-            _, msg_data = self._imap.uid("FETCH", str(latest_uid).encode(), "(BODY.PEEK[])")
-            raw = msg_data[0][1]
-            msg = _email_mod.message_from_bytes(raw)
+            _, msg_data = self._imap.uid("FETCH", str(latest_uid).encode(), "(BODY.PEEK[HEADER.FIELDS (SUBJECT)] BODY.PEEK[TEXT])")
+            subject = ""
             body = ""
-            if msg.is_multipart():
-                for part in msg.walk():
-                    ctype = part.get_content_type()
-                    if ctype in ("text/plain", "text/html"):
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            body += payload.decode("utf-8", errors="replace") + "\n"
-            else:
-                payload = msg.get_payload(decode=True)
-                if payload:
-                    body = payload.decode("utf-8", errors="replace")
-            return body
+            for item in msg_data:
+                if isinstance(item, tuple):
+                    content_str = item[1].decode("utf-8", errors="replace")
+                    if "Subject:" in content_str:
+                        subject = content_str.split("Subject:", 1)[-1].strip()
+                    else:
+                        body += content_str
+            return f">{subject}<\n" + body
         except Exception as e:
             print(f"[Gmail] fetch error: {e}")
             return None
 
 
+class SFrankieInbox:
+    """SFrankieEmail API Client (https://sfrankieemail.bond)"""
+
+    def __init__(self, proxies: Any = None):
+        self.base_url = "https://sfrankieemail.bond"
+        self.proxies = proxies
+        self.email = ""
+        self._session = None
+
+    def _get_session(self):
+        if self._session is None:
+            import requests as _requests
+            self._session = _requests.Session()
+            if self.proxies:
+                self._session.proxies.update(self.proxies)
+        return self._session
+
+    def create_email(self):
+        r = self._get_session().get(f"{self.base_url}/api/domains", timeout=15)
+        trusted = ["sfrankieemail.bond", "5thangluoi.cyou", "frakie.bond", "evrent.id.vn", "sfrankie.dev"]
+        domains = trusted
+        if r.status_code == 200:
+            try:
+                data = r.json()
+                d_list = [d["domain"] for d in data.get("domains", []) if d.get("domain")]
+                valid = [d for d in d_list if d in trusted]
+                if valid:
+                    domains = valid
+            except Exception:
+                pass
+        prefix = "".join(random.choices(_string.ascii_lowercase + _string.digits, k=10))
+        self.email = f"{prefix}@{random.choice(domains)}"
+        return {"provider": "sfrankie", "token": self.email, "email": self.email, "client": self}, self.email
+
+    def fetch_first_email(self) -> Optional[str]:
+        if not self.email:
+            return None
+        for attempt in range(2):
+            try:
+                r = self._get_session().get(
+                    f"{self.base_url}/api/email/{urllib.parse.quote(self.email)}",
+                    timeout=12
+                )
+                if r.status_code != 200:
+                    continue
+                msgs = r.json()
+                if not isinstance(msgs, list) or not msgs:
+                    return None
+                parts = []
+                for m in msgs:
+                    subject = str(m.get("subject") or "")
+                    body = str(m.get("body") or m.get("text") or m.get("html") or m.get("content") or "")
+                    otp = str(m.get("otpCode") or "")
+                    if subject:
+                        parts.append(subject)
+                    if otp:
+                        parts.append(f"code: {otp}")
+                    if body:
+                        parts.append(body[:2000])
+                text = "\n".join(parts)
+                return text if len(text) > 3 else None
+            except Exception:
+                time.sleep(1)
+        return None
+
+
 class EmailService:
     """统一邮箱服务门面，兼容旧调用方"""
 
-    def __init__(self, proxies: Any = None, provider: str = "luckmail"):
+    def __init__(self, proxies: Any = None, provider: str = None):
         self.proxies = proxies
         self.provider = str(provider or os.getenv("EMAIL_PROVIDER") or "luckmail").strip().lower()
-        if self.provider not in {"gptmail", "mailtm", "luckmail", "mailnest", "gmail", "tmail", "fce", "outlook"}:
+        if self.provider not in {"gptmail", "mailtm", "luckmail", "mailnest", "gmail", "tmail", "fce", "outlook", "sfrankie"}:
             raise ValueError(f"不支持的邮箱提供商: {self.provider}")
 
     def create_email(self):
@@ -1132,6 +1258,15 @@ class EmailService:
             except Exception as e:
                 print(f"[Error] 请求 FCE 出错: {e}")
                 return None, None
+        elif self.provider == "sfrankie":
+            try:
+                client = SFrankieInbox(self.proxies)
+                token_like, email = client.create_email()
+                print(f"[+] SFrankie 邮箱已创建: {email}")
+                return token_like, email
+            except Exception as e:
+                print(f"[Error] 请求 SFrankie 出错: {e}")
+                return None, None
         elif self.provider == "outlook":
             try:
                 client = OutlookInbox(self.proxies)
@@ -1162,7 +1297,7 @@ class EmailService:
             if not client:
                 return None
 
-            if provider in ("mailtm", "luckmail", "gptmail-v2", "gmail", "tmail", "fce", "outlook"):
+            if provider in ("mailtm", "luckmail", "gptmail-v2", "gmail", "tmail", "fce", "outlook", "sfrankie"):
                 return client.fetch_first_email()
             elif provider == "mailnest":
                 return client.fetch_first_email(token_like.get("email"))

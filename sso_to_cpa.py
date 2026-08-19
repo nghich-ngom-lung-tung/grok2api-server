@@ -3,6 +3,19 @@ SSO -> CPA PKCE 转换器
 用 curl_cffi 走完整 PKCE 流程，包括 OAuth consent 表单提交
 """
 import json, os, sys, time, hashlib, base64, secrets, urllib.parse, argparse, re
+import certifi, shutil
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+try:
+    certifi.where().encode("ascii")
+except Exception:
+    _orig_cacert = certifi.where()
+    _safe_ca_path = r"C:\Users\Public\cacert.pem"
+    try:
+        shutil.copy(_orig_cacert, _safe_ca_path)
+        certifi.where = lambda: _safe_ca_path
+    except Exception:
+        pass
+
 from curl_cffi import requests as cf_req, CurlOpt
 
 if sys.platform == "win32":
@@ -13,9 +26,41 @@ REDIRECT_URI = "http://127.0.0.1:56121/callback"
 TOKEN_ENDPOINT = "https://auth.x.ai/oauth2/token"
 AUTHORIZE_URL = "https://auth.x.ai/oauth2/authorize"
 SCOPE = "openid profile email offline_access grok-cli:access api:access"
-PROXY = os.getenv("GROK_PROXY") or "http://127.0.0.1:7897"
-AUTH_DIR = os.getenv("CPA_AUTHS_DIR") or "D:/CLIProxyAPIPlus/auths"
+def load_proxies():
+    proxy_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proxies.txt")
+    if os.path.exists(proxy_file):
+        with open(proxy_file, encoding="utf-8") as f:
+            lines = [l.strip() for l in f if l.strip() and not l.strip().startswith("#") and not l.strip().startswith("=")]
+            if lines:
+                return lines
+    return []
+
+PROXY_LIST = load_proxies()
+
+def get_proxy():
+    _proxy_url = os.getenv("GROK_PROXY", "").strip()
+    if _proxy_url:
+        return {"http": _proxy_url, "https": _proxy_url}
+    if os.getenv("USE_FREE_PROXIES", "false").lower() in ("1", "true", "yes"):
+        if PROXY_LIST:
+            p = secrets.choice(PROXY_LIST)
+            if not any(p.startswith(prefix) for prefix in ["http://", "https://", "socks5://", "socks4://"]):
+                p = "socks5://" + p
+            return {"http": p, "https": p}
+    return None
+
+_env_proxy = os.getenv("GROK_PROXY", "").strip()
+PROXY = _env_proxy if _env_proxy else None
 KEYS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys")
+
+_cpa_dir = os.getenv("CPA_AUTHS_DIR", "").strip()
+if _cpa_dir and os.path.exists(_cpa_dir):
+    AUTH_DIR = _cpa_dir
+elif os.path.exists("D:/CLIProxyAPIPlus/auths"):
+    AUTH_DIR = "D:/CLIProxyAPIPlus/auths"
+else:
+    AUTH_DIR = os.path.join(KEYS_DIR, "auths")
+os.makedirs(AUTH_DIR, exist_ok=True)
 
 
 def load_sso_tokens():
@@ -47,7 +92,7 @@ def sso_to_cpa(sso_token, email=""):
     ).rstrip(b"=").decode()
 
     sess = cf_req.Session()
-    sess.proxies = {"http": PROXY, "https": PROXY}
+    sess.proxies = get_proxy()
     sess.cookies.set("sso", sso_token, domain=".x.ai")
 
     params = {
@@ -122,12 +167,9 @@ def sso_to_cpa(sso_token, email=""):
 
 
 def _handle_consent(sess, location, sso_token, code_verifier, email=""):
-    """处理 OAuth consent 页面。用 ruyipage Firefox 浏览器处理（绕过 CF + 执行 JS）。"""
-    sys.path.insert(0, "D:/ruyipage")
+    """处理 OAuth consent 页面。用 DrissionPage 处理（自动过 CF + 点击 Allow）。"""
+    from DrissionPage import ChromiumPage, ChromiumOptions
 
-    from ruyipage import FirefoxPage, FirefoxOptions
-
-    # 重新生成 auth_url（用传入的 code_verifier，保证 code_challenge 一致）
     _code_challenge = base64.urlsafe_b64encode(
         hashlib.sha256(code_verifier.encode()).digest()
     ).rstrip(b"=").decode()
@@ -142,107 +184,50 @@ def _handle_consent(sess, location, sso_token, code_verifier, email=""):
     }
     _auth_url = f"{AUTHORIZE_URL}?{urllib.parse.urlencode(_params)}"
 
-    opts = FirefoxOptions()
-    opts.set_browser_path(r"C:\Program Files\Mozilla Firefox\firefox.exe")
-    opts.headless(True)
+    co = ChromiumOptions()
+    co.set_argument('--no-sandbox')
+    co.set_argument('--disable-gpu')
+    temp_dir = os.path.join(SCRIPT_DIR, "temp_chrome")
+    co.set_user_data_path(temp_dir)
+    page = ChromiumPage(co)
 
-    page = None
     try:
-        page = FirefoxPage(opts)
-
-        # 先访问 auth.x.ai（CF 防护较弱），设置 cookie
-        print(f"  [{email}] 设置 cookie...")
-        page.get("https://auth.x.ai/")
+        print(f"  [{email}] [DrissionPage] 设置 SSO cookie...")
+        page.get("https://accounts.x.ai/sign-up")
         time.sleep(2)
-        if "Attention Required" in page.title:
-            page.handle_cloudflare_challenge(timeout=30)
-            time.sleep(2)
-        page.set_cookies({"name": "sso", "value": sso_token, "domain": ".x.ai"})
+        page.set.cookies({"name": "sso", "value": sso_token, "domain": ".x.ai"})
+        page.set.cookies({"name": "sso-rw", "value": sso_token, "domain": ".x.ai"})
 
-        # 导航到授权 URL（auth.x.ai CF 防护较弱，能绕过）
-        print(f"  [{email}] 导航到授权页...")
-        page.get(_auth_url)
+        target_url = location if (location and ("consent" in location or "oauth2" in location)) else _auth_url
+        print(f"  [{email}] [DrissionPage] 导航至 授权页...")
+        page.get(target_url)
         time.sleep(3)
 
-        # 如果被重定向到 consent 页面并触发 CF，处理挑战
-        if "Attention Required" in page.title:
-            print(f"  [{email}] 处理 CF 挑战...")
-            page.handle_cloudflare_challenge(timeout=60)
-            time.sleep(3)
-
-        # 等待并点击 Allow 按钮
-        import urllib.parse as _up
-        for _ in range(30):
-            time.sleep(1)
-            current_url = page.url
-            if REDIRECT_URI in current_url or "code=" in current_url:
-                parsed_loc = _up.urlparse(current_url)
-                params_loc = _up.parse_qs(parsed_loc.query)
-                code = params_loc.get("code", [None])[0]
+        code = None
+        for attempt in range(15):
+            curr_url = page.url
+            if "code=" in curr_url or REDIRECT_URI in curr_url:
+                parsed = urllib.parse.parse_qs(urllib.parse.urlparse(curr_url).query)
+                code = parsed.get("code", [None])[0]
                 if code:
-                    print(f"  [{email}] 获取到授权码")
-                    return code
-                if "error=" in current_url:
-                    print(f"  [{email}] 授权错误: {current_url[:120]}")
-                    return None
-            # 尝试点击 Allow 按钮
-            try:
-                # 先等待页面完全加载
-                page.wait_loading()
-                html = page.html.lower()
-                if "allow" in html:
-                    # 方法1: 用原生 JS 点击 Allow 按钮
-                    clicked = page.run_js("""
-                        (() => {
-                            var btn = Array.from(document.querySelectorAll('button'))
-                                .find(b => b.textContent.trim() === 'Allow');
-                            if (btn) {
-                                btn.click();
-                                return true;
-                            }
-                            return false;
-                        })()
-                    """)
-                    if clicked:
-                        print(f"  [{email}] 点击 Allow 按钮...")
-                        time.sleep(3)
-                        # 检查是否已跳转
-                        if REDIRECT_URI in page.url or "code=" in page.url:
-                            continue
+                    print(f"  [{email}] [DrissionPage] 成功从 URL 获取 Auth Code!")
+                    break
 
-                    # 方法2: 直接提交表单 + action=approve
-                    print(f"  [{email}] 直接提交表单...")
-                    page.run_js("""
-                        (() => {
-                            var form = document.querySelector('form');
-                            if (form) {
-                                var input = document.createElement('input');
-                                input.type = 'hidden';
-                                input.name = 'action';
-                                input.value = 'approve';
-                                form.appendChild(input);
-                                form.submit();
-                                return true;
-                            }
-                            return false;
-                        })()
-                    """)
-                    time.sleep(3)
-            except:
-                pass
+            # 尝试点击 Allow / Authorize / 允许 按钮
+            page.run_js('''
+            var btns = document.querySelectorAll('button,[role=button]');
+            for(var i=0; i<btns.length; i++){
+                var t = (btns[i].innerText||'').toLowerCase();
+                if(t.indexOf('allow')>=0 || t.indexOf('agree')>=0 || t.indexOf('authorize')>=0 || t.indexOf('允许')>=0 || t.indexOf('同意')>=0 || t.indexOf('continue')>=0){
+                    btns[i].click(); break;
+                }
+            }
+            ''')
+            time.sleep(2)
 
-        print(f"  [{email}] [FAIL] 浏览器超时")
-        return None
+        return code
     except Exception as e:
-        print(f"  [{email}] 浏览器异常: {e}")
-        import traceback; traceback.print_exc()
-        return None
-    finally:
-        if page:
-            try: page.quit()
-            except: pass
-
-
+        print(f"  [{email}] [DrissionPage] Consent 异常: {e}")
 def save_auth(email, cpa_data):
     """保存为代理可用的 xai-*.json 格式"""
     safe_email = email.replace("@", "_").replace(".", "_")

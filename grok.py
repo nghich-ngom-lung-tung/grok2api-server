@@ -1,14 +1,31 @@
-import os, json, random, string, time, re, struct, argparse
-import threading
-import concurrent.futures
-import sys
-from urllib.parse import urljoin, urlparse
+import os, json, random, string, time, re, struct, argparse, sys, urllib.parse
+import certifi, shutil, tempfile
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Monkeypatch certifi for Windows non-ASCII directory path bug in curl_cffi
+try:
+    certifi.where().encode("ascii")
+except Exception:
+    _orig_cacert = certifi.where()
+    _safe_ca_path = r"C:\Users\Public\cacert.pem"
+    try:
+        shutil.copy(_orig_cacert, _safe_ca_path)
+        certifi.where = lambda: _safe_ca_path
+    except Exception:
+        pass
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+import concurrent.futures, threading, base64
+from urllib.parse import urljoin, urlparse, unquote
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-
-if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 load_dotenv()
 
@@ -18,11 +35,32 @@ from YesCaptcha_service import TurnstileService
 # 基础配置
 site_url = "https://accounts.x.ai"
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
-_proxy_url = os.getenv("GROK_PROXY") or "http://127.0.0.1:7897"
-PROXIES = {
-    "http": _proxy_url,
-    "https": _proxy_url
-}
+
+def load_proxies():
+    proxy_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "proxies.txt")
+    if os.path.exists(proxy_file):
+        with open(proxy_file, encoding="utf-8") as f:
+            lines = [l.strip() for l in f if l.strip() and not l.strip().startswith("#") and not l.strip().startswith("=")]
+            if lines:
+                return lines
+    return []
+
+PROXY_LIST = load_proxies()
+
+def get_proxy(fallback_direct=True):
+    _proxy_url = os.getenv("GROK_PROXY", "").strip()
+    if _proxy_url:
+        return {"http": _proxy_url, "https": _proxy_url}
+    if os.getenv("USE_FREE_PROXIES", "false").lower() in ("1", "true", "yes"):
+        if PROXY_LIST:
+            p = random.choice(PROXY_LIST)
+            if not any(p.startswith(prefix) for prefix in ["http://", "https://", "socks5://", "socks4://"]):
+                p = "socks5://" + p
+            return {"http": p, "https": p}
+    return None
+
+PROXIES = get_proxy()
+
 
 # 动态获取的全局变量
 config = {
@@ -66,10 +104,13 @@ def send_email_code_grpc(session, email):
     data = encode_grpc_message(1, email)
     headers = {"content-type": "application/grpc-web+proto", "x-grpc-web": "1", "x-user-agent": "connect-es/2.1.1", "origin": site_url, "referer": f"{site_url}/sign-up?redirect=grok-com"}
     try:
-        # print(f"[debug] {email} 正在发送验证码请求...")
         res = session.post(url, data=data, headers=headers, timeout=15)
-        # print(f"[debug] {email} 请求结束，状态码: {res.status_code}")
-        return res.status_code == 200
+        grpc_status = str(res.headers.get("grpc-status", "0"))
+        if res.status_code != 200 or grpc_status != "0":
+            msg = urllib.parse.unquote(str(res.headers.get("grpc-message", "")))
+            print(f"[-] {email} 发送验证码失败 (gRPC status={grpc_status}): {msg}")
+            return False
+        return True
     except Exception as e:
         print(f"[-] {email} 发送验证码异常: {e}")
         return False
@@ -91,13 +132,6 @@ def register_single_thread(email_provider: str = "gptmail"):
     # 错峰启动，防止瞬时并发过高
     time.sleep(random.uniform(0, 5))
 
-    try:
-        email_service = EmailService(proxies=PROXIES, provider=email_provider)
-        turnstile_service = TurnstileService()
-    except Exception as e:
-        print(f"[-] 服务初始化失败: {e}")
-        return
-
     # 从 config 获取 action_id，缺少则直接退出
     final_action_id = config.get("action_id")
     if not final_action_id:
@@ -105,11 +139,38 @@ def register_single_thread(email_provider: str = "gptmail"):
         return
 
     while not stop_event.is_set():
+        current_proxy = get_proxy()
+        # Nếu proxy trong proxies.txt bị lỗi kết nối, thử dùng kết nối trực tiếp
+        session_kwargs = {"impersonate": "chrome120"}
+        if current_proxy:
+            session_kwargs["proxies"] = current_proxy
+
         try:
-            with requests.Session(impersonate="chrome120", proxies=PROXIES) as session:
-                # 预热连接
-                try: session.get(site_url, timeout=10)
-                except: pass
+            email_service = EmailService(proxies=current_proxy, provider=email_provider)
+            turnstile_service = TurnstileService()
+        except Exception as e:
+            print(f"[-] 服务初始化失败: {e}")
+            time.sleep(5); continue
+
+        try:
+            with requests.Session(**session_kwargs) as session:
+                # 预热连接 - nếu dùng proxy rác bị nghẽn thì tự chuyển sang direct connection
+                pre_ok = False
+                try:
+                    res_pre = session.get(site_url, timeout=8)
+                    if res_pre.status_code == 200:
+                        pre_ok = True
+                except Exception:
+                    pass
+
+                if not pre_ok and current_proxy:
+                    # Retry session without proxy (Direct Connection)
+                    session = requests.Session(impersonate="chrome120")
+                    email_service = EmailService(proxies=None, provider=email_provider)
+                    try:
+                        session.get(site_url, timeout=8)
+                    except Exception:
+                        pass
 
                 password = generate_random_string()
                 
@@ -181,36 +242,48 @@ def register_single_thread(email_provider: str = "gptmail"):
                         res = session.post(f"{site_url}/sign-up", json=payload, headers=headers)
                     
                     if res.status_code == 200:
-                        # 尝试多种 SSO 提取方式
                         sso = None
-                        # 方式1: set-cookie?q= URL (老格式)
-                        for pat in [
-                            r'(https://[^"\s]+set-cookie\?q=[^:"\s]+)',
-                            r'(https://[^"\s]+set-cookie[^"\s]+)',
-                        ]:
-                            m = re.search(pat, res.text)
-                            if m:
-                                sso_url = m.group(0).rstrip("1:").rstrip("2:").rstrip("3:")
-                                try:
-                                    session.get(sso_url, allow_redirects=True, timeout=15)
-                                except:
-                                    pass
-                                sso = session.cookies.get("sso")
-                                if sso:
-                                    break
-                        # 方式2: 直接从 response cookies 取
+                        # 方式1: x-middleware-rewrite header
+                        mw_rewrite = res.headers.get("x-middleware-rewrite", "")
+                        if "set-cookie?q=" in mw_rewrite:
+                            try:
+                                q_val = mw_rewrite.split("set-cookie?q=")[1]
+                                decoded = base64.b64decode(unquote(q_val)).decode("utf-8")
+                                j_obj = json.loads(decoded)
+                                sess_cookie = j_obj.get("sessionCookie", "")
+                                if "sso=" in sess_cookie:
+                                    sso = sess_cookie.split("sso=")[1].split(";")[0]
+                                else:
+                                    print(f"[-] No sso= in sess_cookie: {sess_cookie}")
+                            except Exception as decode_err:
+                                print(f"[-] Decode SSO error: {decode_err}")
+                        else:
+                            print(f"[-] No set-cookie?q= in mw_rewrite: {mw_rewrite[:100]}")
+
+                        # 方式2: set-cookie?q= URL in text
                         if not sso:
-                            sso = session.cookies.get("sso")
-                        # 方式3: 检查 Set-Cookie header
-                        if not sso:
-                            set_cookie = res.headers.get("set-cookie", "")
-                            for c in set_cookie.split(","):
-                                if "sso=" in c:
-                                    sso_val = c.split("sso=")[1].split(";")[0]
-                                    if sso_val:
-                                        sso = sso_val
+                            for pat in [
+                                r'(https://[^"\s]+set-cookie\?q=[^:"\s]+)',
+                                r'(https://[^"\s]+set-cookie[^"\s]+)',
+                            ]:
+                                m = re.search(pat, res.text)
+                                if m:
+                                    sso_url = m.group(0).rstrip("1:").rstrip("2:").rstrip("3:")
+                                    try:
+                                        session.get(sso_url, allow_redirects=True, timeout=15)
+                                    except:
+                                        pass
+                                    sso = session.cookies.get("sso")
+                                    if sso:
                                         break
-                        # 判断：如果响应中包含明确的 invalid-code 错误才是真失败
+                        if not sso:
+                            sso = session.cookies.get("sso") or session.cookies.get("sso-rw") or session.cookies.get("auth_token")
+
+                        if sso:
+                            print(f"[+] 提取到 SSO: {sso[:20]}...")
+                        else:
+                            print(f"[Warn] 未能提取到 SSO Token, res.status={res.status_code}")
+
                         if '"error"' in res.text and 'invalid' in res.text.lower():
                             if not sso:
                                 print(f"[-] {email} 验证码无效: {res.text[:150]}")
@@ -218,9 +291,30 @@ def register_single_thread(email_provider: str = "gptmail"):
 
                         if sso:
                             with file_lock:
-                                os.makedirs("keys", exist_ok=True)
-                                with open("keys/grok.txt", "a") as f: f.write(sso + "\n")
-                                with open("keys/accounts.txt", "a") as f: f.write(f"{email}:{password}:{sso}\n")
+                                try:
+                                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                                    keys_dir = os.path.join(base_dir, "keys")
+                                    os.makedirs(keys_dir, exist_ok=True)
+                                    with open(os.path.join(keys_dir, "grok.txt"), "a", encoding="utf-8") as f:
+                                        f.write(sso + "\n")
+                                        f.flush()
+                                    with open(os.path.join(keys_dir, "accounts.txt"), "a", encoding="utf-8") as f:
+                                        f.write(f"{email}:{password}:{sso}\n")
+                                        f.flush()
+                                        os.fsync(f.fileno())
+                                    # Backup save to Drive D keys
+                                    pub_dir = OUTPUT_DIR
+                                    os.makedirs(pub_dir, exist_ok=True)
+                                    with open(os.path.join(pub_dir, "grok.txt"), "a", encoding="utf-8") as f:
+                                        f.write(sso + "\n")
+                                        f.flush()
+                                    with open(os.path.join(pub_dir, "accounts.txt"), "a", encoding="utf-8") as f:
+                                        f.write(f"{email}:{password}:{sso}\n")
+                                        f.flush()
+                                        os.fsync(f.fileno())
+                                    print(f"[+] Đã lưu tài khoản thành công vào: {os.path.join(keys_dir, 'accounts.txt')}")
+                                except Exception as save_err:
+                                    print(f"[-] Lỗi lưu file: {save_err}")
                                 global success_count, completed_count
                                 success_count += 1
                                 completed_count += 1
@@ -249,7 +343,7 @@ def register_single_thread(email_provider: str = "gptmail"):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--email-provider", choices=["gptmail", "luckmail", "mailtm", "gmail", "tmail", "fce", "outlook"], default=os.getenv("EMAIL_PROVIDER", "luckmail"), help="邮箱提供商：gptmail/luckmail/mailtm/gmail/tmail/fce/outlook")
+    parser.add_argument("--email-provider", choices=["gptmail", "luckmail", "mailtm", "gmail", "tmail", "fce", "outlook", "sfrankie"], default=os.getenv("EMAIL_PROVIDER", "luckmail"), help="邮箱提供商：gptmail/luckmail/mailtm/gmail/tmail/fce/outlook/sfrankie")
     parser.add_argument("--threads", type=int, default=None, help="并发线程数")
     parser.add_argument("--count", type=int, default=0, help="总注册数量（0=无限）")
     args = parser.parse_args()
@@ -260,65 +354,99 @@ def main():
     print("=" * 60 + "\nGrok 注册机\n" + "=" * 60)
     print(f"[*] 当前邮箱提供商: {args.email_provider}")
     print(f"[*] 目标数量: {args.count if args.count else '无限'}")
+    px_info = get_proxy()
+    if PROXY_LIST:
+        print(f"[*] 已成功从 proxies.txt 加载 {len(PROXY_LIST)} proxy SOCKS5/HTTP")
+    elif px_info:
+        print(f"[*] Sử dụng GROK_PROXY: {px_info.get('http')}")
+    else:
+        print("[*] Kết nối trực tiếp (Direct Connection - Không dùng Proxy)")
 
     # 1. 扫描参数
     print("[*] 正在初始化...")
     start_url = f"{site_url}/sign-up"
-    with requests.Session(impersonate="chrome120", proxies=PROXIES) as s:
+    html = ""
+    for _init_try in range(5):
         try:
-            html = s.get(start_url).text
-            # Key
-            key_match = re.search(r'sitekey":"(0x4[a-zA-Z0-9_-]+)"', html)
-            if key_match: config["site_key"] = key_match.group(1)
-            # Tree
-            tree_match = re.search(r'next-router-state-tree":"([^"]+)"', html)
-            if tree_match: config["state_tree"] = tree_match.group(1)
-            # Action ID — 并发抓取所有 JS 文件（用标准 requests，线程安全+快速）
-            js_urls = list(set(urljoin(start_url, m.group(0)) for m in re.finditer(r"/_next/static/chunks/[^\"'\s>]+\.js", html)))
-            if not js_urls:
-                preview = html[:500].replace("\n", " ")
-                print(f"[Warn] HTML 长度 {len(html)}, 未解析出 JS，前500字符预览: {preview}")
-            action_found = None
-            print(f"[*] 并发搜索 {len(js_urls)} 个 JS 文件中的 Action ID...")
-
-            def _fetch_and_search(url):
-                """用标准 requests（线程安全），快速扫描 JS 文件找 Action ID"""
-                import requests as _req
-                try:
-                    js = _req.get(url, proxies={"http": PROXIES["http"], "https": PROXIES["https"]}, timeout=10).text
-                    m = re.search(r'7f[a-fA-F0-9]{40}', js)
-                    if m:
-                        return m.group(0)
-                except Exception:
-                    pass
-                return None
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
-                for result in pool.map(_fetch_and_search, js_urls):
-                    if result:
-                        action_found = result
-                        pool.shutdown(wait=False, cancel_futures=True)
-                        break
-
-            if action_found:
-                config["action_id"] = action_found
-                print(f"[+] Action ID: {action_found}")
-                try:
-                    open(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".action_id.cache"), "w").write(action_found)
-                except Exception:
-                    pass
-            else:
-                # 回退缓存 (2026-08-06: 扫描间歇失败时用上次成功的 ID)
-                try:
-                    cached = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".action_id.cache")).read().strip()
-                    if re.match(r"^7f[a-fA-F0-9]{40}$", cached):
-                        config["action_id"] = cached
-                        print(f"[+] 使用缓存 Action ID: {cached}")
-                except Exception:
-                    pass
+            init_proxy = get_proxy()
+            with requests.Session(impersonate="chrome120", proxies=init_proxy) as s:
+                html = s.get(start_url, timeout=10).text
+                if html:
+                    break
         except Exception as e:
-            print(f"[-] 初始化扫描失败: {e}")
-            return
+            print(f"[*] 预热 /sign-up 失败 ({e})，重试... ")
+            time.sleep(1)
+
+    if not html:
+        print("[*] Proxy không khả dụng, thử kết nối trực tiếp đến xAI...")
+        try:
+            with requests.Session(impersonate="chrome120") as s:
+                html = s.get(start_url, timeout=10).text
+        except Exception as e:
+            print(f"[-] Kết nối trực tiếp thất bại: {e}")
+
+    if not html:
+        print("[-] 初始化失败: 无法连接 xAI 页面")
+        return
+
+    try:
+        # Key
+        key_match = re.search(r'sitekey":"(0x4[a-zA-Z0-9_-]+)"', html)
+        if key_match: config["site_key"] = key_match.group(1)
+        # Tree
+        tree_match = re.search(r'next-router-state-tree":"([^"]+)"', html)
+        if tree_match: config["state_tree"] = tree_match.group(1)
+        # Action ID — 并发抓取所有 JS 文件（用标准 requests，线程安全+快速）
+        js_urls = list(set(urljoin(start_url, m.group(0)) for m in re.finditer(r"/_next/static/chunks/[^\"'\s>]+\.js", html)))
+        if not js_urls:
+            preview = html[:500].replace("\n", " ")
+            print(f"[Warn] HTML 长度 {len(html)}, 未解析出 JS，前500字符预览: {preview}")
+        action_found = None
+        print(f"[*] 并发搜索 {len(js_urls)} 个 JS 文件中的 Action ID...")
+
+        def _fetch_and_search(url):
+            """用标准 requests（线程安全），快速扫描 JS 文件找 Action ID"""
+            import requests as _req
+            try:
+                px = get_proxy()
+                kwargs = {"timeout": 10}
+                if px:
+                    kwargs["proxies"] = {"http": px["http"], "https": px["https"]}
+                js = _req.get(url, **kwargs).text
+                m = re.search(r'7f[a-fA-F0-9]{40}', js)
+                if m:
+                    return m.group(0)
+            except Exception:
+                pass
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+            for result in pool.map(_fetch_and_search, js_urls):
+                if result:
+                    action_found = result
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    break
+
+        if action_found:
+            config["action_id"] = action_found
+            print(f"[+] Action ID: {action_found}")
+            try:
+                open(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".action_id.cache"), "w", encoding="utf-8").write(action_found)
+            except Exception:
+                pass
+        else:
+            # 回退缓存 (2026-08-06: 扫描间歇失败时用上次成功的 ID)
+            try:
+                cached = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".action_id.cache"), encoding="utf-8").read().strip()
+                if re.match(r"^7f[a-fA-F0-9]{40}$", cached):
+                    config["action_id"] = cached
+                    print(f"[+] 使用缓存 Action ID: {cached}")
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[-] 初始化扫描失败: {e}")
+        import traceback; traceback.print_exc()
+        return
 
     if not config["action_id"]:
         print("[-] 错误: 未找到 Action ID")
