@@ -6,6 +6,9 @@ server:
   requestTimeout: 2h
   swaggerEnabled: false
 
+frontend:
+  staticPath: "/app/frontend/dist"
+
 auth:
   accessTokenTTL: 15m
   refreshTokenTTL: 720h
@@ -20,16 +23,14 @@ bootstrapAdmin:
   password: "adminpassword123"
 
 database:
-  driver: "sqlite"
+  driver: sqlite
   sqlite:
     path: "/app/data/backend.db"
-    busyTimeout: 10s
-    journalMode: "WAL"
 
 runtimeStore:
-  driver: "memory"
+  driver: memory
 
 media:
-  driver: "local"
+  driver: local
   local:
     path: "/app/data/media"
