@@ -268,6 +268,89 @@ class MailTMClient:
             return None
 
 
+class TempMailLolClient:
+    """TempMail.lol API Client (https://api.tempmail.lol) - 100% Miễn phí, REST API cực nhanh"""
+
+    def __init__(self, proxies: Any = None):
+        self.session = std_requests.Session()
+        self.session.headers.update({"User-Agent": UA})
+        if proxies:
+            self.session.proxies.update(proxies)
+        self.address = ""
+        self.token = ""
+
+    def create_email(self) -> str:
+        r = self.session.get("https://api.tempmail.lol/v2/inbox/create", timeout=12)
+        r.raise_for_status()
+        data = r.json()
+        self.address = data.get("address", "")
+        self.token = data.get("token", "")
+        if not self.address or not self.token:
+            raise RuntimeError("TempMail.lol: Không lấy được địa chỉ email")
+        return self.address
+
+    def fetch_first_email(self) -> Optional[str]:
+        if not self.token:
+            return None
+        try:
+            r = self.session.get(f"https://api.tempmail.lol/v2/inbox?token={self.token}", timeout=10)
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            emails = data.get("emails", [])
+            if not emails:
+                return None
+            first = emails[0]
+            subject = first.get("subject", "")
+            body = first.get("body") or first.get("html") or ""
+            return f">{subject}<\n{body}"
+        except Exception:
+            return None
+
+
+class GuerrillaMailClient:
+    """GuerrillaMail API Client (https://api.guerrillamail.com) - 100% Miễn phí, ổn định lâu đời"""
+
+    def __init__(self, proxies: Any = None):
+        self.session = std_requests.Session()
+        self.session.headers.update({"User-Agent": UA})
+        if proxies:
+            self.session.proxies.update(proxies)
+        self.address = ""
+        self.sid_token = ""
+
+    def create_email(self) -> str:
+        r = self.session.get("https://api.guerrillamail.com/ajax.php?f=get_email_address", timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        self.address = data.get("email_addr", "")
+        self.sid_token = data.get("sid_token", "")
+        if not self.address:
+            raise RuntimeError("GuerrillaMail: Không lấy được địa chỉ email")
+        return self.address
+
+    def fetch_first_email(self) -> Optional[str]:
+        try:
+            r = self.session.get("https://api.guerrillamail.com/ajax.php?f=check_email&seq=0", timeout=10)
+            if r.status_code != 200:
+                return None
+            data = r.json()
+            emails = data.get("list", [])
+            for em in emails:
+                subj = em.get("mail_subject", "")
+                sender = em.get("mail_from", "")
+                if "grok" in subj.lower() or "x.ai" in sender.lower() or "code" in subj.lower() or "verification" in subj.lower() or len(emails) > 1:
+                    mail_id = em.get("mail_id")
+                    if mail_id:
+                        r2 = self.session.get(f"https://api.guerrillamail.com/ajax.php?f=fetch_email&email_id={mail_id}", timeout=10)
+                        if r2.status_code == 200:
+                            b = r2.json()
+                            return f">{subj}<\n" + (b.get("mail_body") or em.get("mail_excerpt", ""))
+            return None
+        except Exception:
+            return None
+
+
 class LuckMailInbox:
     def __init__(
         self,
@@ -1185,11 +1268,11 @@ class EmailService:
     def __init__(self, proxies: Any = None, provider: str = None):
         self.proxies = proxies
         self.provider = str(provider or os.getenv("EMAIL_PROVIDER") or "luckmail").strip().lower()
-        if self.provider not in {"gptmail", "mailtm", "luckmail", "mailnest", "gmail", "tmail", "fce", "outlook", "sfrankie"}:
-            raise ValueError(f"不支持的邮箱提供商: {self.provider}")
+        if self.provider not in {"gptmail", "mailtm", "luckmail", "mailnest", "gmail", "tmail", "fce", "outlook", "sfrankie", "tempmail", "guerrilla"}:
+            raise ValueError(f"Không hỗ trợ nhà cung cấp email: {self.provider}")
 
     def create_email(self):
-        if self.provider == "mailtm":
+        if self.provider in ("mailtm", "mailgw"):
             try:
                 client = MailTMClient(self.proxies)
                 email = client.create_email()
@@ -1198,6 +1281,26 @@ class EmailService:
                 return token_like, email
             except Exception as e:
                 print(f"[Lỗi] Yêu cầu mail.tm thất bại: {e}")
+                return None, None
+        elif self.provider in ("tempmail", "tempmaillol"):
+            try:
+                client = TempMailLolClient(self.proxies)
+                email = client.create_email()
+                token_like = {"provider": "tempmail", "client": client, "email": email}
+                print(f"[+] Hộp thư TempMail.lol đã tạo: {email}")
+                return token_like, email
+            except Exception as e:
+                print(f"[Lỗi] Yêu cầu TempMail.lol thất bại: {e}")
+                return None, None
+        elif self.provider in ("guerrilla", "guerrillamail"):
+            try:
+                client = GuerrillaMailClient(self.proxies)
+                email = client.create_email()
+                token_like = {"provider": "guerrilla", "client": client, "email": email}
+                print(f"[+] Hộp thư GuerrillaMail đã tạo: {email}")
+                return token_like, email
+            except Exception as e:
+                print(f"[Lỗi] Yêu cầu GuerrillaMail thất bại: {e}")
                 return None, None
         elif self.provider == "luckmail":
             try:
@@ -1297,7 +1400,7 @@ class EmailService:
             if not client:
                 return None
 
-            if provider in ("mailtm", "luckmail", "gptmail-v2", "gmail", "tmail", "fce", "outlook", "sfrankie"):
+            if provider in ("mailtm", "tempmail", "guerrilla", "luckmail", "gptmail-v2", "gmail", "tmail", "fce", "outlook", "sfrankie"):
                 return client.fetch_first_email()
             elif provider == "mailnest":
                 return client.fetch_first_email(token_like.get("email"))

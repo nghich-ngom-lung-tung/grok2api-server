@@ -841,7 +841,7 @@ def main():
     parser.add_argument("--min-delay", type=int, default=8, help="注册间隔最小值（秒，默认 8）")
     parser.add_argument("--max-delay", type=int, default=25, help="注册间隔最大值（秒，默认 25）")
     parser.add_argument("--rotate-region", action="store_true", help="切换不同区域节点（而非随机节点）")
-    parser.add_argument("--email-provider", choices=["gptmail", "luckmail", "mailtm", "gmail", "tmail", "fce", "outlook", "sfrankie"], default=os.getenv("EMAIL_PROVIDER", "mailtm"), help="邮箱提供商")
+    parser.add_argument("--email-provider", choices=["mailtm", "mailgw", "tempmail", "guerrilla", "gptmail", "luckmail", "gmail", "tmail", "fce", "outlook", "sfrankie"], default=os.getenv("EMAIL_PROVIDER", "mailtm"), help="Nhà cung cấp email ảo")
     parser.add_argument("--headless", action="store_true", default=False, help="无头模式（默认 False）")
     parser.add_argument("--no-headless", dest="headless", action="store_false", help="显示窗口模式")
     parser.add_argument("--direct", "--no-proxy", dest="direct", action="store_true", default=False, help="Sử dụng mạng trực tiếp (Direct Connection), không qua proxy")
