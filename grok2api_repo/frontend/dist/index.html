@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grok2API - Next-Gen Grok 2 & Imagine API Hub</title>
+  <meta name="description" content="Nền tảng cung cấp API Grok 2 & Grok Imagine tốc độ cao, chuẩn OpenAI API, tự động xóa Watermark, tối ưu cho Print-On-Demand và ứng dụng AI thương mại." />
+  <link rel="icon" type="image/png" href="/favicon.ico?v=1" />
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --mint-primary: #00F5A0;
+      --mint-glow: rgba(0, 245, 160, 0.4);
+      --mint-subtle: #6EE7B7;
+      --mint-dark: #064E3B;
+      --mint-bg-tint: rgba(0, 245, 160, 0.04);
+      --bg-dark: #070B09;
+      --bg-card: rgba(13, 22, 18, 0.75);
+      --bg-card-hover: rgba(18, 30, 25, 0.9);
+      --border-subtle: rgba(0, 245, 160, 0.15);
+      --border-strong: #00F5A0;
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --text-dark: #070B09;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      line-height: 1.6;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(0, 245, 160, 0.12) 0%, transparent 60%),
+        radial-gradient(circle at 10% 40%, rgba(0, 217, 245, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 90% 70%, rgba(0, 245, 160, 0.06) 0%, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #070B09;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(0, 245, 160, 0.3);
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--mint-primary);
+    }
+
+    /* Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Navbar */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      background: rgba(7, 11, 9, 0.8);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .navbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 72px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-main);
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: -0.5px;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, #00F5A0, #00D9F5);
+      color: var(--text-dark);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 800;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--mint-primary);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid transparent;
+    }
+
+    .btn-mint {
+      background: var(--mint-primary);
+      color: var(--text-dark);
+      box-shadow: 0 0 20px var(--mint-glow);
+    }
+
+    .btn-mint:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 30px rgba(0, 245, 160, 0.6);
+      background: #1affb2;
+    }
+
+    .btn-outline {
+      background: rgba(0, 245, 160, 0.05);
+      border-color: var(--border-subtle);
+      color: var(--text-main);
+    }
+
+    .btn-outline:hover {
+      background: rgba(0, 245, 160, 0.12);
+      border-color: var(--mint-primary);
+      color: var(--mint-primary);
+      transform: translateY(-2px);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 90px 0 60px;
+      text-align: center;
+      position: relative;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 245, 160, 0.08);
+      border: 1px solid rgba(0, 245, 160, 0.25);
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      color: var(--mint-primary);
+      font-weight: 600;
+      margin-bottom: 24px;
+      animation: pulseGlow 3s infinite;
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 10px rgba(0, 245, 160, 0.1); }
+      50% { box-shadow: 0 0 25px rgba(0, 245, 160, 0.3); }
+    }
+
+    .hero h1 {
+      font-size: 3.5rem;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -1.5px;
+      margin-bottom: 20px;
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #00F5A0 20%, #00D9F5 80%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: 1.2rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 auto 36px;
+    }
+
+    .hero-cta {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 48px;
+      flex-wrap: wrap;
+    }
+
+    /* Stats Banner */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      max-width: 960px;
+      margin: 0 auto 60px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 20px 16px;
+      backdrop-filter: blur(12px);
+      text-align: center;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .stat-card:hover {
+      border-color: var(--mint-primary);
+      transform: translateY(-3px);
+    }
+
+    .stat-value {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--mint-primary);
+      margin-bottom: 4px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .stat-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* Section Header */
+    .section-header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .section-tag {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--mint-primary);
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .section-title {
+      font-size: 2.25rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    /* Playground Section */
+    .playground-section {
+      padding: 60px 0;
+    }
+
+    .playground-wrapper {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+    }
+
+    .playground-controls {
+      padding: 32px;
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .form-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .form-input, .form-select, .form-textarea {
+      background: rgba(7, 11, 9, 0.7);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      border-color: var(--mint-primary);
+      box-shadow: 0 0 12px rgba(0, 245, 160, 0.2);
+    }
+
+    .form-textarea {
+      resize: vertical;
+      min-height: 110px;
+      line-height: 1.5;
+    }
+
+    .prompt-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      background: rgba(0, 245, 160, 0.06);
+      border: 1px solid var(--border-subtle);
+      color: var(--mint-subtle);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .chip:hover {
+      background: rgba(0, 245, 160, 0.18);
+      border-color: var(--mint-primary);
+      color: var(--text-main);
+      transform: translateY(-1px);
+    }
+
+    .playground-preview {
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.2);
+      min-height: 460px;
+      position: relative;
+    }
+
+    .preview-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+
+    .preview-placeholder i {
+      color: var(--mint-primary);
+      opacity: 0.5;
+    }
+
+    .preview-result {
+      display: none;
+      width: 100%;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .preview-image-box {
+      max-width: 100%;
+      max-height: 380px;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      position: relative;
+    }
+
+    .preview-image-box img {
+      width: 100%;
+      height: 100%;
+      max-height: 380px;
+      object-fit: contain;
+      display: block;
+      background: #000;
+    }
+
+    .preview-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(7, 11, 9, 0.85);
+      border: 1px solid var(--mint-primary);
+      color: var(--mint-primary);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      backdrop-filter: blur(4px);
+    }
+
+    .preview-actions {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .loading-spinner {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(0, 245, 160, 0.15);
+      border-top-color: var(--mint-primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Documentation Section */
+    .docs-section {
+      padding: 80px 0;
+    }
+
+    .docs-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      backdrop-filter: blur(16px);
+    }
+
+    .tabs-header {
+      display: flex;
+      gap: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 8px 18px;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-btn.active {
+      background: rgba(0, 245, 160, 0.1);
+      border-color: var(--mint-primary);
+      color: var(--mint-primary);
+    }
+
+    .code-block-wrapper {
+      background: #040706;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 18px;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .copy-btn {
+      background: rgba(0, 245, 160, 0.1);
+      border: 1px solid var(--border-subtle);
+      color: var(--mint-subtle);
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .copy-btn:hover {
+      background: var(--mint-primary);
+      color: var(--text-dark);
+    }
+
+    pre {
+      padding: 20px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.88rem;
+      color: #E2E8F0;
+      line-height: 1.6;
+    }
+
+    /* Features Grid */
+    .features-section {
+      padding: 60px 0;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 32px 24px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .feature-card:hover {
+      border-color: var(--mint-primary);
+      transform: translateY(-5px);
+      background: var(--bg-card-hover);
+      box-shadow: 0 10px 30px rgba(0, 245, 160, 0.08);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-sm);
+      background: rgba(0, 245, 160, 0.1);
+      border: 1px solid rgba(0, 245, 160, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--mint-primary);
+      margin-bottom: 20px;
+    }
+
+    .feature-card h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .feature-card p {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 48px 0;
+      margin-top: 80px;
+      background: rgba(7, 11, 9, 0.95);
+    }
+
+    .footer-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      list-style: none;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: var(--mint-primary);
+    }
+
+    /* Toast Notification */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #0D1C16;
+      border: 1px solid var(--mint-primary);
+      color: var(--mint-primary);
+      padding: 12px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      font-weight: 600;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.3s ease;
+      z-index: 999;
+      pointer-events: none;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .hero h1 { font-size: 2.5rem; }
+      .playground-wrapper { grid-template-columns: 1fr; }
+      .playground-controls { border-right: none; border-bottom: 1px solid var(--border-subtle); }
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .features-grid { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <header>
+    <div class="container navbar">
+      <a href="/" class="logo">
+        <span class="logo-badge">GROK 2</span>
+        <span>grokapi.cyou</span>
+      </a>
+
+      <ul class="nav-links">
+        <li><a href="#playground">Live Playground</a></li>
+        <li><a href="#docs">API Docs</a></li>
+        <li><a href="#features">Tính năng</a></li>
+        <li><a href="#pod">Chuẩn POD</a></li>
+      </ul>
+
+      <div class="nav-actions">
+        <a href="/app.html#/dashboard" class="btn btn-outline">
+          <i data-lucide="layout-dashboard"></i> Admin Dashboard
+        </a>
+        <a href="#playground" class="btn btn-mint">
+          <i data-lucide="sparkles"></i> Dùng Thử Ngay
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">
+        <i data-lucide="zap" size="16"></i> Real-time Grok 2 & Imagine API Hub
+      </div>
+      
+      <h1>
+        Next-Gen <span class="gradient-text">Grok 2 & Imagine</span> API<br/>
+        Tốc Độ Cao • Xóa Watermark 100%
+      </h1>
+      
+      <p>
+        Cung cấp API sinh ảnh và Chat OpenAI-Compatible từ Grok (x.ai). Hỗ trợ chuẩn in ấn Print-On-Demand (POD), tự động xóa logo Grok thời gian thực, sẵn sàng tích hợp vào mọi ứng dụng.
+      </p>
+
+      <div class="hero-cta">
+        <a href="#playground" class="btn btn-mint" style="padding: 14px 28px; font-size: 1.05rem;">
+          <i data-lucide="wand-2"></i> Trải Nghiệm Sinh Ảnh Ngay
+        </a>
+        <a href="#docs" class="btn btn-outline" style="padding: 14px 28px; font-size: 1.05rem;">
+          <i data-lucide="code-2"></i> Xem Tài Liệu API
+        </a>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value">~6.8s</div>
+          <div class="stat-label">Tốc Độ Sinh Ảnh Trung Bình</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">100%</div>
+          <div class="stat-label">Xóa Logo Watermark Ngầm</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">32+</div>
+          <div class="stat-label">Tài Khoản Xoay Vòng Tự Động</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">OpenAI</div>
+          <div class="stat-label">Chuẩn Endpoint Quốc Tế</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Live Playground Section -->
+  <section id="playground" class="playground-section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Trải Nghiệm Trực Tiếp</span>
+        <h2 class="section-title">Live API Playground</h2>
+      </div>
+
+      <div class="playground-wrapper">
+        <!-- Controls -->
+        <div class="playground-controls">
+          <div class="form-group">
+            <label class="form-label">
+              <span>API Key</span>
+              <span style="color: var(--mint-primary); font-size: 0.75rem;">Sẵn dùng cho Demo</span>
+            </label>
+            <input type="text" id="apiKeyInput" class="form-input" value="g2a_23add0565c43_0huEvba19LTk2yQbvMQlSchQlVyVzYNr" placeholder="Bearer sk-..." />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Chọn Model AI</label>
+            <select id="modelSelect" class="form-select">
+              <option value="grok-imagine-image" selected>grok-imagine-image (Chất lượng cao nhất)</option>
+              <option value="grok-imagine-image-2.0">grok-imagine-image-2.0 (Phiên bản nâng cao)</option>
+              <option value="grok-imagine-image-lite">grok-imagine-image-lite (Tốc độ siêu nhanh)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <span>Prompt Mô Tả Ảnh</span>
+            </label>
+            <textarea id="promptInput" class="form-textarea" placeholder="Nhập mô tả hình ảnh bằng tiếng Anh để đạt kết quả tốt nhất...">T-shirt design, powerful Japanese Oni mask with cybernetic samurai armor and cherry blossoms, dramatic lighting, bold line art, highly detailed vector graphic, vibrant red and gold colors, isolated on solid clean black background, print on demand style, 8k resolution</textarea>
+          </div>
+
+          <!-- Quick Prompts -->
+          <div class="form-group">
+            <label class="form-label">Prompt Mẫu POD:</label>
+            <div class="prompt-chips">
+              <span class="chip" onclick="setPrompt(1)">⚔️ Mecha Samurai</span>
+              <span class="chip" onclick="setPrompt(2)">🚀 Synthwave Astronaut</span>
+              <span class="chip" onclick="setPrompt(3)">☕ Retro Coffee Cat</span>
+              <span class="chip" onclick="setPrompt(4)">💀 Cyberpunk Skull</span>
+              <span class="chip" onclick="setPrompt(5)">🌲 Vintage Camping Bear</span>
+            </div>
+          </div>
+
+          <button id="generateBtn" class="btn btn-mint" onclick="generateImage()" style="margin-top: 8px; width: 100%; height: 48px;">
+            <i data-lucide="play"></i> Bắt Đầu Sinh Ảnh (Generate)
+          </button>
+        </div>
+
+        <!-- Preview -->
+        <div class="playground-preview">
+          <!-- Placeholder -->
+          <div id="previewPlaceholder" class="preview-placeholder">
+            <i data-lucide="image" size="48"></i>
+            <p style="font-size: 1.05rem; font-weight: 600; color: var(--text-main);">Khung Xem Trước Ảnh Render</p>
+            <p style="font-size: 0.85rem; max-width: 280px;">Bấm nút "Bắt Đầu Sinh Ảnh" bên trái để kiểm tra trực tiếp kết quả trả về từ Grok API.</p>
+          </div>
+
+          <!-- Loading Spinner -->
+          <div id="loadingSpinner" class="loading-spinner">
+            <div class="spinner"></div>
+            <p style="font-size: 0.95rem; font-weight: 600; color: var(--mint-primary);" id="loadingText">Đang gửi yêu cầu tới Grok API... (0s)</p>
+          </div>
+
+          <!-- Result -->
+          <div id="previewResult" class="preview-result">
+            <div class="preview-image-box">
+              <span class="preview-badge">🪐 Watermark Free</span>
+              <img id="resultImage" src="" alt="Grok Generated Image" />
+            </div>
+
+            <div class="preview-actions" style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+              <div style="display: flex; gap: 8px; width: 100%;">
+                <button class="btn btn-mint" onclick="downloadAs('jpg')" style="flex: 1;">
+                  <i data-lucide="download"></i> Tải JPG Gốc
+                </button>
+                <button class="btn btn-outline" onclick="downloadAs('png')" style="flex: 1; border-color: var(--mint-primary); color: var(--mint-primary);">
+                  <i data-lucide="file-image"></i> Tải PNG Chuẩn
+                </button>
+              </div>
+              <div style="display: flex; gap: 8px; width: 100%;">
+                <button class="btn btn-outline" onclick="downloadTransparentPNG()" style="flex: 1; background: rgba(0, 245, 160, 0.12); color: #fff;">
+                  <i data-lucide="scissors"></i> Tải PNG Tách Nền (Trong Suốt)
+                </button>
+                <button class="btn btn-outline" onclick="copyImageURL()" style="flex: 1;">
+                  <i data-lucide="copy"></i> Copy Link
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- API Documentation Section -->
+  <section id="docs" class="docs-section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Dành Cho Lập Trình Viên</span>
+        <h2 class="section-title">Tài Liệu API & Hướng Dẫn Tích Hợp</h2>
+      </div>
+
+      <div class="docs-card">
+        <div class="tabs-header">
+          <button class="tab-btn active" onclick="switchTab('curl')">cURL</button>
+          <button class="tab-btn" onclick="switchTab('python')">Python (Requests)</button>
+          <button class="tab-btn" onclick="switchTab('openai')">Python (OpenAI SDK)</button>
+          <button class="tab-btn" onclick="switchTab('js')">JavaScript / Fetch</button>
+        </div>
+
+        <!-- Code Block -->
+        <div class="code-block-wrapper">
+          <div class="code-header">
+            <span id="endpointBadge" style="font-family: 'JetBrains Mono', monospace; color: var(--mint-primary);">POST https://api.grokapi.cyou/v1/images/generations</span>
+            <button class="copy-btn" onclick="copyCode()"><i data-lucide="copy" size="14"></i> Copy Code</button>
+          </div>
+          <pre><code id="codeSnippet">curl -X POST https://api.grokapi.cyou/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer g2a_23add0565c43_0huEvba19LTk2yQbvMQlSchQlVyVzYNr" \
+  -d '{
+    "model": "grok-imagine-image",
+    "prompt": "a futuristic mecha samurai in tokyo neon street, 8k digital art"
+  }'</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid Section -->
+  <section id="features" class="features-section">
+    <div class="container">
+      <div class="section-header">
+        <span class="section-tag">Ưu Điểm Vượt Trội</span>
+        <h2 class="section-title">Tại Sao Nên Dùng grokapi.cyou?</h2>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="zap"></i></div>
+          <h3>Tốc Độ Sinh Ảnh 6-8s</h3>
+          <p>Tối ưu hóa pipeline kết nối trực tiếp đến x.ai, xử lý đa luồng cho tốc độ render siêu tốc.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="shield-check"></i></div>
+          <h3>Xóa Watermark 100%</h3>
+          <p>Tích hợp daemon tự động phát hiện và loại bỏ logo Grok thời gian thực trước khi trả ảnh về.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="shirt"></i></div>
+          <h3>Tối Ưu Chuẩn In POD</h3>
+          <p>Màu sắc rực rỡ, độ tương phản cao, nền nguyên khối giúp bóc tách nền PNG và Upscale 4500x5400 cực dễ.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="refresh-cw"></i></div>
+          <h3>Pool Tài Khoản Tự Động</h3>
+          <p>Cơ chế xoay vòng thông minh, tự động chuyển tài khoản khi gặp giới hạn quota hoặc rate limit.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="cpu"></i></div>
+          <h3>Chuẩn OpenAI Drop-in</h3>
+          <p>Tương thích 100% với cấu trúc OpenAI API, chỉ cần thay đổi Base URL và API Key là chạy ngay.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon"><i data-lucide="lock"></i></div>
+          <h3>Bảo Mật & Cloudflare SSL</h3>
+          <p>Toàn bộ đường truyền mã hóa HTTPS/SSL qua mạng lưới Anycast toàn cầu của Cloudflare.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-content">
+      <div class="logo">
+        <span class="logo-badge">GROK 2</span>
+        <span>grokapi.cyou</span>
+      </div>
+
+      <ul class="footer-links">
+        <li><a href="#playground">Playground</a></li>
+        <li><a href="#docs">API Docs</a></li>
+        <li><a href="/app.html#/dashboard">Admin Dashboard</a></li>
+        <li><a href="https://github.com/nghich-ngom-lung-tung/grok2api-server" target="_blank">GitHub</a></li>
+      </ul>
+
+      <p style="font-size: 0.85rem; color: var(--text-muted);">
+        © 2026 grokapi.cyou. Powered by Grok2API & Cloudflare.
+      </p>
+    </div>
+  </footer>
+
+  <!-- Toast -->
+  <div id="toast"><i data-lucide="check-circle" size="18"></i> <span id="toastMsg">Đã sao chép vào bộ nhớ tạm!</span></div>
+
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Prompts Dictionary
+    const samplePrompts = {
+      1: "T-shirt design, powerful mecha samurai warrior with glowing katana standing in neon rainy cyberpunk street, intricate armor engravings, bold crisp line art, vector apparel illustration, isolated on pure clean solid black background, print ready, 8k",
+      2: "Futuristic astronaut floating with neon planets and synthwave geometric grid, vibrant purple and yellow lighting, trendy vector streetwear apparel graphic, clean contours, isolated on solid black background, ready for screen printing",
+      3: "Cute funny cat drinking a giant cup of coffee, retro vintage 90s cartoon style, bold clean outlines, witty and adorable expression, pastel colors, vector art t-shirt design, isolated on clean pure black background, sticker graphic, high contrast",
+      4: "T-shirt design illustration, detailed mechanical cyberpunk skull entwined with red roses, sharp metallic textures, neon cyan and crimson accents, dark fantasy tattoo style, crisp vector lines, isolated on solid pure black background, premium merchandise design",
+      5: "Vintage distressed t-shirt graphic, majestic grizzly bear roaring in pine forest with retro 80s circular sunset in background, warm orange and teal color palette, silhouette elements, detailed screen printing style, isolated on clean black background"
+    };
+
+    function setPrompt(id) {
+      document.getElementById('promptInput').value = samplePrompts[id] || '';
+    }
+
+    // Code Snippets
+    const snippets = {
+      curl: `curl -X POST https://api.grokapi.cyou/v1/images/generations \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer g2a_23add0565c43_0huEvba19LTk2yQbvMQlSchQlVyVzYNr" \\
+  -d '{
+    "model": "grok-imagine-image",
+    "prompt": "a futuristic mecha samurai in tokyo neon street, 8k digital art"
+  }'`,
+      python: `import requests
+
+url = "https://api.grokapi.cyou/v1/images/generations"
+headers = {
+    "Authorization": "Bearer g2a_23add0565c43_0huEvba19LTk2yQbvMQlSchQlVyVzYNr",
+    "Content-Type": "application/json"
+}
+payload = {
+    "model": "grok-imagine-image",
+    "prompt": "a futuristic mecha samurai in tokyo neon street, 8k digital art"
+}
+
+response = requests.post(url, headers=headers, json=payload)
+data = response.json()
+print("Image URL:", data['data'][0]['url'])`,
+      openai: `from openai import OpenAI
+
+client = OpenAI(
+    api_key="g2a_23add0565c43_0huEvba19LTk2yQbvMQlSchQlVyVzYNr",
+    base_url="https://api.grokapi.cyou/v1"
+)
+
+response = client.images.generate(
+    model="grok-imagine-image",
+    prompt="a futuristic mecha samurai in tokyo neon street, 8k digital art",
+    n=1
+)
+
+print("Image URL:", response.data[0].url)`,
+      js: `const response = await fetch("https://api.grokapi.cyou/v1/images/generations", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer g2a_23add0565c43_0huEvba19LTk2yQbvMQlSchQlVyVzYNr"
+  },
+  body: JSON.stringify({
+    model: "grok-imagine-image",
+    prompt: "a futuristic mecha samurai in tokyo neon street, 8k digital art"
+  })
+});
+
+const data = await response.json();
+console.log("Image URL:", data.data[0].url);`
+    };
+
+    function switchTab(tabKey) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+      document.getElementById('codeSnippet').textContent = snippets[tabKey];
+    }
+
+    // Generate Image Function
+    let timerInterval = null;
+    async function generateImage() {
+      const apiKey = document.getElementById('apiKeyInput').value.trim();
+      const model = document.getElementById('modelSelect').value;
+      const prompt = document.getElementById('promptInput').value.trim();
+
+      if (!prompt) {
+        showToast("Vui lòng nhập Prompt!");
+        return;
+      }
+
+      const generateBtn = document.getElementById('generateBtn');
+      const placeholder = document.getElementById('previewPlaceholder');
+      const spinner = document.getElementById('loadingSpinner');
+      const result = document.getElementById('previewResult');
+      const resultImg = document.getElementById('resultImage');
+      const downloadBtn = document.getElementById('downloadBtn');
+      const loadingText = document.getElementById('loadingText');
+
+      // UI Loading State
+      generateBtn.disabled = true;
+      generateBtn.style.opacity = "0.7";
+      placeholder.style.display = "none";
+      result.style.display = "none";
+      spinner.style.display = "flex";
+
+      let seconds = 0;
+      loadingText.textContent = `Đang gửi yêu cầu tới Grok API... (${seconds}s)`;
+      timerInterval = setInterval(() => {
+        seconds++;
+        loadingText.textContent = `Đang kết nối & sinh ảnh AI... (${seconds}s)`;
+      }, 1000);
+
+      try {
+        const res = await fetch("/v1/images/generations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + apiKey
+          },
+          body: JSON.stringify({
+            model: model,
+            prompt: prompt
+          })
+        });
+
+        clearInterval(timerInterval);
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error?.message || `Lỗi máy chủ (${res.status})`);
+        }
+
+        const data = await res.json();
+        const imgUrl = data.data?.[0]?.url;
+
+        if (!imgUrl) {
+          throw new Error("Không nhận được URL ảnh từ phản hồi!");
+        }
+
+        resultImg.src = imgUrl;
+        window.currentGeneratedURL = imgUrl;
+
+        spinner.style.display = "none";
+        result.style.display = "flex";
+        showToast(`🎉 Sinh ảnh thành công sau ${seconds} giây!`);
+      } catch (err) {
+        clearInterval(timerInterval);
+        spinner.style.display = "none";
+        placeholder.style.display = "flex";
+        showToast(`❌ Lỗi: ${err.message}`);
+      } finally {
+        generateBtn.disabled = false;
+        generateBtn.style.opacity = "1";
+      }
+    }
+
+    async function downloadAs(format) {
+      if (!window.currentGeneratedURL) return;
+      showToast(`⏳ Đang chuẩn bị tải file ${format.toUpperCase()}...`);
+      try {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = window.currentGeneratedURL;
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        const mime = format === 'png' ? 'image/png' : 'image/jpeg';
+        canvas.toBlob((blob) => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `grok_pod_${Date.now()}.${format}`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          showToast(`✅ Đã tải về file .${format.toUpperCase()}!`);
+        }, mime, 1.0);
+      } catch (e) {
+        // Fallback direct download
+        const a = document.createElement('a');
+        a.href = window.currentGeneratedURL;
+        a.download = `grok_image_${Date.now()}.${format}`;
+        a.target = '_blank';
+        a.click();
+      }
+    }
+
+    async function downloadTransparentPNG() {
+      if (!window.currentGeneratedURL) return;
+      showToast("✂️ Đang tự động bóc tách nền đen sang PNG trong suốt...");
+      try {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = window.currentGeneratedURL;
+        await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imgData.data;
+
+        // Auto remove solid black background with soft edge feathering
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const brightness = Math.max(r, g, b);
+
+          if (brightness < 30) {
+            // Pure black / deep shadow -> Transparent
+            data[i + 3] = 0;
+          } else if (brightness < 60) {
+            // Soft edge transition
+            data[i + 3] = Math.round(((brightness - 30) / 30) * 255);
+          }
+        }
+
+        ctx.putImageData(imgData, 0, 0);
+
+        canvas.toBlob((blob) => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `grok_transparent_pod_${Date.now()}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          showToast("🎉 Đã tải về file PNG Trong Suốt sẵn sàng in áo!");
+        }, 'image/png');
+      } catch (e) {
+        showToast("❌ Lỗi khi tách nền: " + e.message);
+      }
+    }
+
+    function copyImageURL() {
+      if (window.currentGeneratedURL) {
+        navigator.clipboard.writeText(window.currentGeneratedURL);
+        showToast("Đã sao chép link ảnh vào clipboard!");
+      }
+    }
+
+    function copyCode() {
+      const code = document.getElementById('codeSnippet').textContent;
+      navigator.clipboard.writeText(code);
+      showToast("Đã sao chép mã nguồn!");
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toastMsg').textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3500);
+    }
+  </script>
+</body>
+</html>
