@@ -1194,10 +1194,10 @@ class EmailService:
                 client = MailTMClient(self.proxies)
                 email = client.create_email()
                 token_like = {"provider": "mailtm", "client": client, "email": email}
-                print(f"[+] mail.tm 邮箱已创建: {email}")
+                print(f"[+] Hộp thư mail.tm đã tạo: {email}")
                 return token_like, email
             except Exception as e:
-                print(f"[Error] 请求 mail.tm 出错: {e}")
+                print(f"[Lỗi] Yêu cầu mail.tm thất bại: {e}")
                 return None, None
         elif self.provider == "luckmail":
             try:
@@ -1212,10 +1212,10 @@ class EmailService:
                     domain=settings["domain"],
                 )
                 token_like, email = inbox.create_email()
-                print(f"[+] LuckMail 邮箱已购买: {email}")
+                print(f"[+] Hộp thư LuckMail đã tạo: {email}")
                 return token_like, email
             except Exception as e:
-                print(f"[Error] 请求 LuckMail 出错: {e}")
+                print(f"[Lỗi] Yêu cầu LuckMail thất bại: {e}")
                 return None, None
         elif self.provider == 'mailnest':
             try:
@@ -1225,66 +1225,66 @@ class EmailService:
                     project_code=settings["project_code"],
                 )
                 token_like, email = inbox.create_email()
-                print(f"[+] MailNest 邮箱已购买: {email}")
+                print(f"[+] Hộp thư MailNest đã tạo: {email}")
                 return token_like, email
             except Exception as e:
-                print(f"[Error] 请求 MailNest 出错: {e}")
+                print(f"[Lỗi] Yêu cầu MailNest thất bại: {e}")
                 return None, None
         elif self.provider == "gmail":
             try:
                 client = GmailIMAPClient(self.proxies)
                 email = client.create_email()
                 token_like = {"provider": "gmail", "client": client, "email": email}
-                print(f"[+] Gmail 别名已创建: {email}")
+                print(f"[+] Bí danh Gmail đã tạo: {email}")
                 return token_like, email
             except Exception as e:
-                print(f"[Error] Gmail 出错: {e}")
+                print(f"[Lỗi] Gmail thất bại: {e}")
                 return None, None
         elif self.provider == "tmail":
             try:
                 client = TmailInbox(self.proxies)
                 token_like, email = client.create_email()
-                print(f"[+] Tmail 邮箱已创建: {email}")
+                print(f"[+] Hộp thư Tmail đã tạo: {email}")
                 return token_like, email
             except Exception as e:
-                print(f"[Error] 请求 Tmail 出错: {e}")
+                print(f"[Lỗi] Yêu cầu Tmail thất bại: {e}")
                 return None, None
         elif self.provider == "fce":
             try:
                 client = FCEInbox(self.proxies)
                 token_like, email = client.create_email()
-                print(f"[+] FCE 邮箱已创建: {email}")
+                print(f"[+] Hộp thư FCE đã tạo: {email}")
                 return token_like, email
             except Exception as e:
-                print(f"[Error] 请求 FCE 出错: {e}")
+                print(f"[Lỗi] Yêu cầu FCE thất bại: {e}")
                 return None, None
         elif self.provider == "sfrankie":
             try:
                 client = SFrankieInbox(self.proxies)
                 token_like, email = client.create_email()
-                print(f"[+] SFrankie 邮箱已创建: {email}")
+                print(f"[+] Hộp thư SFrankie đã tạo: {email}")
                 return token_like, email
             except Exception as e:
-                print(f"[Error] 请求 SFrankie 出错: {e}")
+                print(f"[Lỗi] Yêu cầu SFrankie thất bại: {e}")
                 return None, None
         elif self.provider == "outlook":
             try:
                 client = OutlookInbox(self.proxies)
                 token_like, email = client.create_email()
-                print(f"[+] Outlook 别名已创建: {email}")
+                print(f"[+] Bí danh Outlook đã tạo: {email}")
                 return token_like, email
             except Exception as e:
-                print(f"[Error] 请求 Outlook 出错: {e}")
+                print(f"[Lỗi] Yêu cầu Outlook thất bại: {e}")
                 return None, None
         # gptmail: 使用 V2 API
         try:
             client = GPTMailInboxV2(self.proxies)
             email = client.create_email()
             token_like = {"provider": "gptmail-v2", "client": client, "email": email}
-            print(f"[+] GPTMail 邮箱已创建: {email}")
+            print(f"[+] Hộp thư GPTMail đã tạo: {email}")
             return token_like, email
         except Exception as e:
-            print(f"[Error] 请求 GPTMail 出错: {e}")
+            print(f"[Lỗi] Yêu cầu GPTMail thất bại: {e}")
             return None, None
 
     def fetch_first_email(self, token_like):

@@ -401,7 +401,7 @@ def browser_init(headless=True, direct=False):
     try:
         co.set_timeouts(12)
         page = ChromiumPage(co)
-        print("[Browser] 打开注册页...")
+        print("[Browser] 🌐 Đang mở trang đăng ký Grok...")
         page.get(f"{SITE_URL}/sign-up?redirect=grok-com", timeout=12)
         time.sleep(3)
 
@@ -409,7 +409,7 @@ def browser_init(headless=True, direct=False):
         if not html or len(html) < 200:
             if cur_proxy:
                 remove_bad_proxy(cur_proxy)
-            raise RuntimeError("页面加载失败 (Proxy 可能已失效)")
+            raise RuntimeError("Tải trang thất bại (Proxy có thể đã mất kết nối)")
     except Exception as e:
         if cur_proxy:
             remove_bad_proxy(cur_proxy)
@@ -424,7 +424,7 @@ def browser_init(headless=True, direct=False):
     m = re.search(r'sitekey":"(0x4[a-zA-Z0-9_-]+)"', html)
     if m:
         site_key = m.group(1)
-    print(f"[Browser] SiteKey: {site_key}")
+    print(f"[Browser] 🔑 SiteKey: {site_key}")
 
     # --- Action ID ---
     js_urls = re.findall(r"/_next/static/chunks/[^\"'\s>]+\.js", html)
@@ -442,7 +442,7 @@ def browser_init(headless=True, direct=False):
                 m = re.search(r'7f[a-fA-F0-9]{40}', js)
             if m:
                 action_id = m.group(1) if m.lastindex else m.group(0)
-                print(f"[Browser] ActionID: {action_id}")
+                print(f"[Browser] 🆔 ActionID: {action_id}")
                 break
         except Exception:
             continue
@@ -453,11 +453,11 @@ def browser_init(headless=True, direct=False):
                 cached = open(cache_file, encoding="utf-8").read().strip()
                 if re.match(r"^(7f)?[a-fA-F0-9]{40}$", cached):
                     action_id = cached
-                    print(f"[Browser] 使用缓存 Action ID: {action_id}")
+                    print(f"[Browser] 💾 Sử dụng Action ID từ cache: {action_id}")
         except Exception:
             pass
     if not action_id:
-        raise RuntimeError("未找到 Action ID，无法注册")
+        raise RuntimeError("Không tìm thấy Action ID, không thể đăng ký")
 
     # --- State Tree ---
     state_tree = ""
@@ -465,8 +465,8 @@ def browser_init(headless=True, direct=False):
     if m:
         state_tree = m.group(1)
 
-    # --- 点击邮箱注册选项，触发自然 Turnstile ---
-    print("[Browser] 点击邮箱注册选项...")
+    # --- Click chọn email ---
+    print("[Browser] 🖱️ Đang click chọn đăng ký bằng Email...")
     page.run_js('''
     var all=document.querySelectorAll('button,[role=button]');
     for(var i=0;i<all.length;i++){
@@ -479,17 +479,16 @@ def browser_init(headless=True, direct=False):
     ''')
     time.sleep(3)
 
-    # --- Turnstile: 优先等待页面自带的 cf-turnstile-response 填充 ---
-    print("[Browser] 等待 Turnstile 解决...")
+    # --- Turnstile ---
+    print("[Browser] 🛡️ Đang chờ giải mã Cloudflare Turnstile...")
     ts_token = ""
     for attempt in range(4):
         time.sleep(2)
         ts_token = page.run_js(
             'return document.querySelector("[name=cf-turnstile-response]")?.value||""')
         if len(ts_token) > 50:
-            print(f"[Browser] 自然 Turnstile 已解决（尝试{attempt+1}次）")
+            print(f"[Browser] ⚡ Turnstile tự động vượt qua (Lần thử {attempt+1})")
             break
-        # 检查是否有 iframe/challenge 并尝试自动点击
         if attempt in (2, 5, 10):
             try:
                 iframe = page.ele("@src*turnstile", timeout=1) or page.ele("@src*challenges", timeout=1)
@@ -499,8 +498,7 @@ def browser_init(headless=True, direct=False):
                 pass
 
     if len(ts_token) < 50:
-        # 手动渲染 fallback（70s 超时，需大于 Turnstile 的 60s）
-        print("[Browser] 自然等待超时，尝试手动渲染（70s超时）...")
+        print("[Browser] ⏳ Chờ tự động quá lâu, tiến hành kích hoạt thủ công (timeout 70s)...")
         ts_token = page.run_js('''
         var _sitekey = arguments[0];
         return new Promise(function(resolve, _reject) {
@@ -532,17 +530,16 @@ def browser_init(headless=True, direct=False):
             }
         });
         ''', site_key, timeout=75)
-        print(f"[Browser] 手动渲染结果: {ts_token[:80] if ts_token else 'None'}...")
+        print(f"[Browser] 🔄 Kết quả kích hoạt Turnstile: {ts_token[:80] if ts_token else 'None'}...")
 
     if not ts_token or ts_token.startswith('timeout') or ts_token.startswith('error'):
-        # 尝试直接从已有字段获取
         ts_token = page.run_js(
             'return document.querySelector("[name=cf-turnstile-response]")?.value||""')
         if len(ts_token) < 50:
             page.quit()
-            raise RuntimeError(f"Turnstile 未解决: {ts_token}")
+            raise RuntimeError(f"Turnstile chưa giải quyết được: {ts_token}")
 
-    print(f"[Browser] Turnstile 已解决（{len(ts_token)} chars）")
+    print(f"[Browser] ✅ Cloudflare Turnstile đã giải quyết thành công! ({len(ts_token)} chars)")
 
     return {
         "site_key": site_key,
@@ -621,24 +618,24 @@ def solve_turnstile(page, site_key):
 
 
 def register_one(cfg):
-    """注册单个账号 → 返回 (email, password, sso) 或 None"""
+    """Đăng ký 1 tài khoản Grok → Trả về (email, password, sso) hoặc None"""
     provider = cfg.get("email_provider", "mailtm")
     cur_proxy = cfg.get("cur_proxy")
-    # ── 创建邮箱 ──
-    print(f"[Mail] 创建 {provider} 邮箱...")
+    # ── Tạo email ──
+    print(f"[Mail] 📧 Đang tạo hộp thư {provider}...")
     try:
         from email_service import EmailService
         email_svc = EmailService(provider=provider, proxies={"http": cur_proxy, "https": cur_proxy} if cur_proxy else None)
         token_like, email = email_svc.create_email()
         if not email:
-            print(f"[Mail] {provider} 创建返回 None")
+            print(f"[Mail] ❌ Dịch vụ {provider} trả về None")
             if cur_proxy:
                 remove_bad_proxy(cur_proxy)
             return None
     except Exception as e:
-        print(f"[Mail] {provider} 失败: {e}")
+        print(f"[Mail] ❌ Dịch vụ {provider} lỗi: {e}")
         return None
-    print(f"[Mail] {email}")
+    print(f"[Mail] 📬 Email: {email}")
 
     # ── curl_cffi session ──
     sess = cf_req.Session(impersonate="chrome120")
@@ -649,17 +646,17 @@ def register_one(cfg):
     except Exception:
         pass
 
-    # ── Step 1: 发送验证码 (gRPC) ──
-    print(f"[{email}] 发送验证码 (gRPC)...")
+    # ── Step 1: Gửi mã xác nhận OTP (gRPC) ──
+    print(f"[{email}] 📤 Đang gửi mã OTP xác nhận (gRPC)...")
     if not send_email_code_grpc(sess, email):
-        print(f"[{email}] 发送验证码失败")
+        print(f"[{email}] ❌ Gửi mã OTP thất bại")
         if cur_proxy:
             remove_bad_proxy(cur_proxy)
         return None
-    print(f"[{email}] 验证码已发送")
+    print(f"[{email}] ✅ Mã OTP đã được gửi")
 
-    # ── Step 2: 等待验证码 ──
-    print(f"[{email}] 等待验证码...")
+    # ── Step 2: Đợi email nhận mã OTP ──
+    print(f"[{email}] ⏳ Đang đợi email chứa mã OTP...")
     code = None
     for _ in range(36):  # 36 x 5s = 180s
         time.sleep(5)
@@ -670,31 +667,31 @@ def register_one(cfg):
                 code = m.group(1) + m.group(2)
                 break
     if not code:
-        print(f"[{email}] 未收到验证码（超时）")
+        print(f"[{email}] ⚠️ Không nhận được mã OTP (Quá thời gian chờ)")
         return None
-    print(f"[{email}] 验证码: {code}")
+    print(f"[{email}] 🔑 Đã nhận mã OTP: {code}")
 
-    # ── Step 3: 验证验证码 (gRPC) ──
-    print(f"[{email}] 验证验证码 (gRPC)...")
+    # ── Step 3: Xác thực mã OTP (gRPC) ──
+    print(f"[{email}] 🔍 Đang xác thực mã OTP (gRPC)...")
     if not verify_email_code_grpc(sess, email, code):
-        print(f"[{email}] 验证码无效")
+        print(f"[{email}] ❌ Mã OTP không hợp lệ")
         return None
-    print(f"[{email}] 验证码正确")
+    print(f"[{email}] ✅ Mã OTP chính xác")
 
     # ── Step 4: Turnstile token ──
     ts_token = cfg.get("ts_token")
     if not ts_token:
-        print(f"[{email}] 无 Turnstile token")
+        print(f"[{email}] ❌ Thiếu Turnstile token")
         return None
-    print(f"[{email}] Turnstile token 已就绪（{len(ts_token)} chars）")
+    print(f"[{email}] ✅ Turnstile token đã sẵn sàng ({len(ts_token)} chars)")
 
-    # ── Step 5: 准备注册数据 ──
+    # ── Step 5: Chuẩn bị thông tin tài khoản ──
     password = rand_str(14) + "Aa1!"
     first = rand_name()
     last = rand_name()
 
-    # ── Step 6: 注册 POST ──
-    print(f"[{email}] 提交注册...")
+    # ── Step 6: Gửi dữ liệu đăng ký POST ──
+    print(f"[{email}] 🚀 Đang gửi dữ liệu tạo tài khoản...")
     try:
         sess.get(SITE_URL, timeout=10)
     except Exception:
@@ -727,20 +724,20 @@ def register_one(cfg):
 
     try:
         r = sess.post(f"{SITE_URL}/sign-up", json=payload, headers=headers, timeout=30)
-        print(f"[{email}] POST 状态: {r.status_code}")
+        print(f"[{email}] Trạng thái POST: {r.status_code}")
     except Exception as e:
-        print(f"[{email}] POST 异常: {e}")
+        print(f"[{email}] ❌ Lỗi gửi POST: {e}")
         return None
 
     if r.status_code != 200:
-        print(f"[{email}] 注册失败: {r.text[:300]}")
+        print(f"[{email}] ❌ Đăng ký thất bại: {r.text[:300]}")
         return None
 
-    # ── Step 7: 提取 SSO ──
+    # ── Step 7: Trích xuất SSO Token ──
     resp_text = r.text
     sso = None
     
-    # 方式 1: 从 x-middleware-rewrite / x-action-redirect Header 提取
+    # Cách 1: Từ Header redirect
     for hdr_name in ("x-middleware-rewrite", "x-action-redirect", "location"):
         hdr_val = r.headers.get(hdr_name, "")
         if "set-cookie?q=" in hdr_val:
@@ -752,20 +749,20 @@ def register_one(cfg):
                 sess_cookie = j_obj.get("sessionCookie", "")
                 if "sso=" in sess_cookie:
                     sso = sess_cookie.split("sso=")[1].split(";")[0]
-                    print(f"[{email}] 从 {hdr_name} Header 成功解析 SSO Token!")
+                    print(f"[{email}] 🎉 Trích xuất thành công SSO Token từ {hdr_name} Header!")
                     break
             except Exception as e:
                 pass
 
-    # 方式 2: 从 Session Cookies 提取
+    # Cách 2: Từ Session Cookie
     if not sso:
         for c_name in ("sso", "sso-rw", "auth_token"):
             if sess.cookies.get(c_name):
                 sso = sess.cookies.get(c_name)
-                print(f"[{email}] 从 Session Cookie ({c_name}) 成功提取 SSO Token!")
+                print(f"[{email}] 🎉 Trích xuất thành công SSO Token từ Session Cookie ({c_name})!")
                 break
 
-    # 方式 3: 从 Response Text 中正则匹配 set-cookie URL
+    # Cách 3: Tìm set-cookie URL trong response body
     if not sso:
         sso_url = None
         for pat in [
@@ -779,7 +776,7 @@ def register_one(cfg):
                 break
 
         if sso_url:
-            print(f"[{email}] SSO URL: {sso_url[:100]}...")
+            print(f"[{email}] 🔗 SSO URL: {sso_url[:100]}...")
             try:
                 rs = requests.Session()
                 if PROXY:
@@ -814,12 +811,12 @@ def register_one(cfg):
                         except Exception:
                             sso = q_str
                         if sso:
-                            print(f"[{email}] 从 SSO URL 参数 q 成功提取 SSO Token!")
+                            print(f"[{email}] 🎉 Trích xuất thành công SSO Token từ tham số URL q!")
                 except Exception:
                     pass
 
     if sso:
-        print(f"[{email}] ✅ SSO: {sso[:30]}...")
+        print(f"[{email}] ✅ ĐĂNG KÝ THÀNH CÔNG! SSO Token: {sso[:30]}...")
         if cur_proxy:
             save_good_proxy(cur_proxy)
         with open(os.path.join(OUTPUT_DIR, "grok.txt"), "a", encoding="utf-8") as f:
@@ -828,7 +825,7 @@ def register_one(cfg):
             f.write(f"{email}:{password}:{sso}\n")
         return (email, password, sso)
     else:
-        print(f"[{email}] 响应中无 SSO URL / Cookie，前300字符:")
+        print(f"[{email}] ⚠️ Không tìm thấy SSO Token trong phản hồi, 300 ký tự đầu:")
         print(f"  {resp_text[:300]}")
 
     return None
