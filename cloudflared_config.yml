@@ -1,0 +1,9 @@
+tunnel: 77768ca3-0ad1-4d35-8b2f-279cf197aac6
+credentials-file: C:\Users\Admin\.cloudflared\77768ca3-0ad1-4d35-8b2f-279cf197aac6.json
+
+ingress:
+  - hostname: grokapi.cyou
+    service: http://127.0.0.1:8080
+  - hostname: api.grokapi.cyou
+    service: http://127.0.0.1:8080
+  - service: http_status:404
