@@ -4,9 +4,8 @@
 
 * **Domain chính**: `https://api.grokapi.cyou`
 * **Dashboard Quản Lý**: [https://api.grokapi.cyou/dashboard](https://api.grokapi.cyou/dashboard)
-  - **Tài khoản**: `admin`
-  - **Mật khẩu**: `adminpassword123`
-* **API Key hiện tại**: `g2a_23add0565c43_0huEvba19LTk2yQbvMQlSchQlVyVzYNr` *(Hoặc tạo thêm trên Dashboard)*
+  - **Tài khoản & mật khẩu**: Xem trong file `.env` (biến `GROK2API_USER` / `GROK2API_PASS`)
+* **API Key**: Tạo trên Dashboard → Settings → API Keys
 
 ---
 
@@ -15,7 +14,7 @@
 * **Endpoint**: `POST https://api.grokapi.cyou/v1/images/generations`
 * **Headers**:
   - `Content-Type`: `application/json`
-  - `Authorization`: `Bearer g2a_23add0565c43_0huEvba19LTk2yQbvMQlSchQlVyVzYNr`
+  - `Authorization`: `Bearer <API_KEY_CỦA_BẠN>`
 * **Body (JSON)**:
 ```json
 {
@@ -53,9 +52,21 @@ uv run python auto_batch_register_and_sync.py 5 --direct
 
 ---
 
-## 🖥️ 4. KHỞI ĐỘNG HỆ THỐNG (MỖI KHI BẬT MÁY TÍNH)
+## 🧹 4. KIỂM TRA & DỌN DẸP TÀI KHOẢN HẾT HẠN
+
+```powershell
+# Quét và tự động xóa tài khoản chết:
+uv run python check_and_clean_accounts.py
+```
+
+> **Lưu ý**: Watermark Daemon đã tích hợp sẵn auto-cleanup mỗi 6 giờ. Bạn chỉ cần chạy lệnh trên khi muốn dọn dẹp ngay lập tức.
+
+---
+
+## 🖥️ 5. KHỞI ĐỘNG HỆ THỐNG (MỖI KHI BẬT MÁY TÍNH)
 
 Chỉ cần **click đúp vào file `START_GROK_SERVER.bat`** trong thư mục dự án:
-1. Tự khởi động Watermark Daemon
+1. Tự khởi động Watermark Daemon + Auto-Cleanup
 2. Tự khởi động Backend Grok2API
-3. Tự kết nối Cloudflare Tunnel vào domain `api.grokapi.cyou`
+3. Tự chờ backend sẵn sàng (health check)
+4. Tự kết nối Cloudflare Tunnel vào domain `api.grokapi.cyou`

@@ -1,44 +1,26 @@
 """
-Grok 全自动注册 — 免费版 v4
-─────────────────────────────
-- 邮箱：GPTMail (mail.chatgpt.org.uk) 免费 API — 公共 Key gpt-test，日 20 万次
-- Turnstile：DrissionPage 浏览器手动 turnstile.render()
-- 验证码：gRPC-web 协议发送 + 验证（对齐原始 grok.py）
-- 注册：Next.js Server Action POST（curl_cffi）
-- Clash IP 轮换：每次注册前切换代理节点降低风控
-- 输出：SSO + email:password:sso → keys/
-
-无需 YesCaptcha / LuckMail / MailTM
+grok_free.py — Đăng ký tự động tài khoản Grok (Phiên bản miễn phí v4)
+───────────────────────────────────────────────────────────────────────
+- Email: Hỗ trợ đa nhà cung cấp (mailtm, tempmail, guerrilla, gmail, v.v.)
+- Turnstile: DrissionPage trình duyệt + turnstile.render() tự động
+- Mã OTP: gRPC-web gửi & xác minh
+- Đăng ký: Next.js Server Action POST (curl_cffi)
+- Xoay IP: Hỗ trợ Clash proxy rotation hoặc direct mode
+- Đầu ra: SSO + email:password:sso → keys/
 """
-import certifi, shutil, os, re, sys, json, time, random, string, struct, urllib.parse, argparse
+import os, re, sys, json, time, random, string, struct, urllib.parse, argparse
 
-_safe_ca_path = r"C:\Users\Admin\cacert.pem"
-try:
-    if not os.path.exists(_safe_ca_path):
-        with open(certifi.where(), "rb") as _f1, open(_safe_ca_path, "wb") as _f2:
-            _f2.write(_f1.read())
-    certifi.where = lambda: _safe_ca_path
-    os.environ["SSL_CERT_FILE"] = _safe_ca_path
-    os.environ["REQUESTS_CA_BUNDLE"] = _safe_ca_path
-    os.environ["CURL_CA_BUNDLE"] = _safe_ca_path
-except Exception:
-    pass
-
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
-    except Exception:
-        pass
+# common.py tự động fix SSL certs + setup console UTF-8 khi import
+import common  # noqa: F401
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from curl_cffi import requests as cf_req
 from DrissionPage import ChromiumPage, ChromiumOptions
-import requests  # 标准 requests 用于 SSO 跳转，兼容 auth.grokipedia.com 等域名
+import requests  # requests chuẩn cho SSO redirect, tương thích auth.grokipedia.com
 
-# ── 配置 ──
+# ── Cấu hình ──
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SITE_URL = "https://accounts.x.ai"
 FALLBACK_SITE_KEY = "0x4AAAAAAAhr9JGVDZbrZOo0"

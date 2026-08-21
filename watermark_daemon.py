@@ -84,11 +84,71 @@ def scan_and_clean():
             except Exception:
                 pass
 
+# ── Tự động dọn dẹp tài khoản hết hạn (chạy mỗi 6 giờ) ─────────────
+CLEANUP_INTERVAL_SECONDS = 6 * 60 * 60  # 6 giờ
+
+def auto_cleanup_expired_accounts():
+    """Gọi Admin API để quét và xóa tài khoản reauthRequired/disabled."""
+    try:
+        from common import get_admin_token, get_base_url
+        import requests as _req
+
+        base = get_base_url()
+        token = get_admin_token(base)
+        if not token:
+            return
+
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Làm mới trạng thái
+        _req.post(f"{base}/api/admin/v1/accounts/web/refresh-quotas", headers=headers, timeout=30)
+        time.sleep(2)
+
+        # Lấy danh sách
+        r = _req.get(f"{base}/api/admin/v1/accounts?pageSize=500", headers=headers, timeout=20)
+        if r.status_code != 200:
+            return
+
+        accounts = r.json().get("data", {}).get("items", [])
+        expired = [a for a in accounts if a.get("authStatus") in ("reauthRequired", "disabled", "invalid")]
+
+        if not expired:
+            active_count = len([a for a in accounts if a.get("authStatus") not in ("reauthRequired", "disabled", "invalid")])
+            print(f"🔄 [Auto-Cleanup] Tất cả {active_count} tài khoản đều khỏe mạnh — không cần dọn dẹp.")
+            return
+
+        deleted = 0
+        for acc in expired:
+            try:
+                dr = _req.delete(f"{base}/api/admin/v1/accounts/{acc['id']}", headers=headers, timeout=10)
+                if dr.status_code in (200, 204):
+                    deleted += 1
+            except Exception:
+                pass
+
+        print(f"🧹 [Auto-Cleanup] Đã tự động xóa {deleted}/{len(expired)} tài khoản hết hạn!")
+
+    except Exception as e:
+        print(f"[!] Auto-cleanup lỗi: {e}")
+
+
 if __name__ == "__main__":
     print(f"🛡️ Watermark Cleaner Daemon đã kích hoạt cho Grok2API!")
+    print(f"🔄 Auto-Cleanup tài khoản hết hạn: mỗi {CLEANUP_INTERVAL_SECONDS // 3600} giờ")
+
+    last_cleanup = 0
+
     while True:
         try:
             scan_and_clean()
         except Exception:
             pass
+
+        # Kiểm tra xem đã đến lúc dọn dẹp tài khoản chưa
+        now = time.time()
+        if now - last_cleanup >= CLEANUP_INTERVAL_SECONDS:
+            auto_cleanup_expired_accounts()
+            last_cleanup = now
+
         time.sleep(0.5)
+

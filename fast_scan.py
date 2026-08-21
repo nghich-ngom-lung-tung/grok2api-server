@@ -1,31 +1,15 @@
 """
-Fast Proxy Scanner & Purger for Grok Registration
-────────────────────────────────────────────────
+fast_scan.py — Quét proxy đa luồng siêu tốc cho đăng ký Grok
+────────────────────────────────────────────────────────────────
 Quét đa luồng (100 threads) toàn bộ proxies.txt:
 1. Tự động test 3 giao thức: HTTP → SOCKS5 → SOCKS4
 2. Lưu Proxy Sống (kèm đúng giao thức) vào good_proxies.txt
 3. Xóa sạch proxies.txt sau khi quét xong (chờ dán IP mới)
 """
-import certifi, os, sys, time, concurrent.futures
+import os, sys, time, concurrent.futures
 
-_safe_ca_path = r"C:\Users\Admin\cacert.pem"
-try:
-    if not os.path.exists(_safe_ca_path):
-        with open(certifi.where(), "rb") as _f1, open(_safe_ca_path, "wb") as _f2:
-            _f2.write(_f1.read())
-    certifi.where = lambda: _safe_ca_path
-    os.environ["SSL_CERT_FILE"] = _safe_ca_path
-    os.environ["REQUESTS_CA_BUNDLE"] = _safe_ca_path
-    os.environ["CURL_CA_BUNDLE"] = _safe_ca_path
-except Exception:
-    pass
-
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+# common.py tự động fix SSL certs + setup console UTF-8 khi import
+import common  # noqa: F401
 
 from curl_cffi import requests as cf_req
 

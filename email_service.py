@@ -1,14 +1,20 @@
 """
-邮箱服务类
-对外保持接口不变：
+email_service.py — Dịch vụ email đa nhà cung cấp cho đăng ký Grok
+──────────────────────────────────────────────────────────────────
+Giao diện thống nhất:
 - create_email() -> (token_like, email)
 - fetch_first_email(token_like) -> str | None
 
-支持 provider:
-- gptmail（默认，GPTMail 免费 API）
-- mailtm（免费，mail.tm API，无需 Key，推荐）
-- luckmail（购买邮箱 + token 轮询）
-- mailnest（MailNest 付费 API）
+Nhà cung cấp hỗ trợ:
+- gptmail  (miễn phí, GPTMail API)
+- mailtm   (miễn phí, mail.tm API, không cần Key, khuyên dùng)
+- tempmail (miễn phí, tempmail.lol API)
+- guerrilla(miễn phí, guerrillamail API)
+- luckmail (trả phí, mua email + poll token)
+- mailnest (trả phí, MailNest API)
+- gmail    (miễn phí, dùng +alias với Gmail cá nhân)
+- outlook  (miễn phí, dùng +tag alias với Outlook cá nhân)
+- fce      (miễn phí, FreeCustom.Email API)
 """
 
 import json
@@ -20,41 +26,14 @@ import time
 import string as _string
 import threading
 
-import certifi, shutil
-try:
-    _safe_ca_path = r"C:\Users\Admin\cacert.pem"
-    if not os.path.exists(_safe_ca_path):
-        with open(certifi.where(), "rb") as _f1, open(_safe_ca_path, "wb") as _f2:
-            _f2.write(_f1.read())
-    certifi.where = lambda: _safe_ca_path
-    os.environ["SSL_CERT_FILE"] = _safe_ca_path
-    os.environ["REQUESTS_CA_BUNDLE"] = _safe_ca_path
-    os.environ["CURL_CA_BUNDLE"] = _safe_ca_path
-except Exception:
-    pass
+# common.py tự động fix SSL certs + setup console UTF-8 khi import
+import common  # noqa: F401
 
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-import certifi, shutil
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-try:
-    certifi.where().encode("ascii")
-except Exception:
-    _orig_cacert = certifi.where()
-    _safe_ca_path = r"C:\Users\Public\cacert.pem"
-    try:
-        shutil.copy(_orig_cacert, _safe_ca_path)
-        certifi.where = lambda: _safe_ca_path
-    except Exception:
-        pass
 
 from curl_cffi import requests
 
-# 标准 requests 用于 mail.tm（避免 curl_cffi TLS 兼容问题）
+# Dùng requests chuẩn cho mail.tm (tránh lỗi TLS với curl_cffi)
 import requests as std_requests
 
 try:

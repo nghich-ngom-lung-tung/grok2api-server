@@ -2,6 +2,8 @@
 .env
 *.env
 config.local.yaml
+grok2api_repo/config.yaml
+cacert.pem
 
 # Secrets & Accounts (Bảo mật tài khoản & Token)
 keys/

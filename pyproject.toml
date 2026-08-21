@@ -8,6 +8,7 @@ dependencies = [
     "beautifulsoup4",
     "curl_cffi",
     "opencv-python-headless>=5.0.0.93",
+    "patchright>=1.62.1",
     "pillow>=12.3.0",
     "python-dotenv",
     "requests",
