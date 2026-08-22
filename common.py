@@ -13,12 +13,21 @@ import sys
 import certifi
 import shutil
 
-from dotenv import load_dotenv
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ─── Đọc .env một lần duy nhất ────────────────────────────────────────
-load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
+except ImportError:
+    # Tự đọc file .env thủ công nếu chạy bằng python thường chưa cài dotenv
+    env_file = os.path.join(SCRIPT_DIR, ".env")
+    if os.path.exists(env_file):
+        with open(env_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
 def setup_console():
@@ -33,20 +42,17 @@ def setup_console():
 
 def fix_ssl_certs():
     """
-    Sửa lỗi SSL trên Windows khi đường dẫn certifi chứa ký tự Unicode.
-    Copy cacert.pem vào thư mục dự án (cùng cấp với common.py) để tránh lỗi path.
+    Sửa lỗi SSL trên Windows khi đường dẫn certifi chứa ký tự Unicode (như 'nghịch ngợm lung tung').
+    Copy cacert.pem vào C:\\Users\\Public\\cacert.pem (100% ASCII path) để curl_cffi không bị crash charmap.
     """
-    try:
-        certifi.where().encode("ascii")
-        return  # Đường dẫn ASCII bình thường, không cần fix
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        pass
-
-    safe_path = os.path.join(SCRIPT_DIR, "cacert.pem")
+    safe_path = r"C:\Users\Public\cacert.pem"
     try:
         orig = certifi.where()
         if not os.path.exists(safe_path) or os.path.getsize(safe_path) == 0:
-            shutil.copy(orig, safe_path)
+            if os.path.exists(os.path.join(SCRIPT_DIR, "cacert.pem")):
+                shutil.copy(os.path.join(SCRIPT_DIR, "cacert.pem"), safe_path)
+            else:
+                shutil.copy(orig, safe_path)
         certifi.where = lambda: safe_path
         os.environ["SSL_CERT_FILE"] = safe_path
         os.environ["REQUESTS_CA_BUNDLE"] = safe_path

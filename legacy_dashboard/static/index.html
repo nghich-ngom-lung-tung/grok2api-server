@@ -41,6 +41,10 @@
           <i class="fa-solid fa-users-gear"></i>
           <span>Kho Tài Khoản</span>
         </button>
+        <button class="nav-item" data-tab="security">
+          <i class="fa-solid fa-shield-halved"></i>
+          <span>API Key & Bảo Mật</span>
+        </button>
         <button class="nav-item" data-tab="requests">
           <i class="fa-solid fa-network-wired"></i>
           <span>Quản Lý Request & IP</span>
@@ -434,32 +438,186 @@
           </div>
         </section>
 
-        <!-- TAB 6: API DOCS & INTEGRATION -->
+        <!-- TAB 6: SECURITY & API KEYS -->
+        <section id="tab-security" class="tab-pane">
+          <!-- Security Stat Cards -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon icon-emerald" id="auth-status-icon">
+                <i class="fa-solid fa-lock"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Chế Độ Xác Thực</span>
+                <h3 id="stat-auth-mode">Công Khai (Open)</h3>
+                <span class="stat-trend neutral" id="stat-auth-desc">Không bắt buộc Key</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-cyan">
+                <i class="fa-solid fa-gauge-high"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Rate Limit Toàn Cục</span>
+                <h3 id="stat-global-rpm">60 RPM</h3>
+                <span class="stat-trend neutral">Request / Phút / IP</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-purple">
+                <i class="fa-solid fa-key"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Tổng API Key</span>
+                <h3 id="stat-total-keys">0</h3>
+                <span class="stat-trend positive" id="stat-active-keys">0 Hoạt động</span>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon icon-amber">
+                <i class="fa-solid fa-shield-halved"></i>
+              </div>
+              <div class="stat-data">
+                <span class="stat-label">Lượt Gọi Qua Key</span>
+                <h3 id="stat-key-requests">0</h3>
+                <span class="stat-trend neutral">Đã ghi nhận</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Security Settings & Configuration Card -->
+          <div class="section-card" style="margin-bottom: 24px;">
+            <div class="card-header">
+              <div>
+                <h3><i class="fa-solid fa-sliders"></i> Cài Đặt Bảo Mật & Xác Thực API</h3>
+                <p class="section-desc">Bảo vệ cổng OpenAI API /v1/* khỏi việc bị spam hoặc gọi trái phép từ bên ngoài</p>
+              </div>
+            </div>
+
+            <div class="security-config-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; padding: 10px 0;">
+              <div class="config-box" style="background: rgba(9, 18, 14, 0.6); padding: 18px; border-radius: 12px; border: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <h4 style="color: #f0fdf4; margin-bottom: 4px; font-size: 15px;"><i class="fa-solid fa-shield-halved" style="color: #00f5a0; margin-right: 8px;"></i>Bắt Buộc Xác Thực API Key</h4>
+                  <p style="color: #94a3b8; font-size: 12px; margin: 0;">Khi BẬT, mọi request vào /v1/* bắt buộc phải có Bearer API Key hợp lệ</p>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="toggle-require-auth" onchange="updateSecurityConfig()">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div class="config-box" style="background: rgba(9, 18, 14, 0.6); padding: 18px; border-radius: 12px; border: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <h4 style="color: #f0fdf4; margin-bottom: 4px; font-size: 15px;"><i class="fa-solid fa-stopwatch" style="color: #38bdf8; margin-right: 8px;"></i>Rate Limit Mặc Định (RPM)</h4>
+                  <p style="color: #94a3b8; font-size: 12px; margin: 0;">Số request tối đa mỗi IP được gọi trong 1 phút</p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input type="number" id="input-global-rpm" min="1" max="1000" style="width: 80px; padding: 8px 12px; border-radius: 8px; background: rgba(5,8,7,0.8); border: 1px solid var(--border-color); color: #00f5a0; font-family: 'JetBrains Mono', monospace; font-weight: 700; text-align: center;">
+                  <button class="btn btn-secondary" onclick="saveGlobalRpm()" style="padding: 8px 14px; font-size: 13px;">Lưu</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Create New Key Card -->
+          <div class="section-card" style="margin-bottom: 24px;">
+            <div class="card-header">
+              <div>
+                <h3><i class="fa-solid fa-plus-circle"></i> Tạo API Key Mới</h3>
+                <p class="section-desc">Cấp quyền truy cập cho Cursor IDE, ChatBot Telegram, NextChat, hoặc ứng dụng bên ngoài</p>
+              </div>
+            </div>
+
+            <form id="create-key-form" onsubmit="handleCreateKey(event)" style="display: grid; grid-template-columns: 2fr 1fr 2fr auto; gap: 14px; align-items: flex-end;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label style="display: block; color: #a7f3d0; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Tên API Key / Mục đích</label>
+                <input type="text" id="new-key-name" placeholder="VD: Cursor IDE, Bot Telegram..." required style="width: 100%; padding: 11px 14px; border-radius: 8px; background: rgba(5,8,7,0.8); border: 1px solid var(--border-color); color: #f0fdf4;">
+              </div>
+
+              <div class="form-group" style="margin-bottom: 0;">
+                <label style="display: block; color: #a7f3d0; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Rate Limit (RPM)</label>
+                <input type="number" id="new-key-rpm" value="30" min="0" max="1000" placeholder="30 (0 = vô hạn)" style="width: 100%; padding: 11px 14px; border-radius: 8px; background: rgba(5,8,7,0.8); border: 1px solid var(--border-color); color: #00f5a0; font-family: 'JetBrains Mono', monospace; font-weight: 700;">
+              </div>
+
+              <div class="form-group" style="margin-bottom: 0;">
+                <label style="display: block; color: #a7f3d0; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Tùy chỉnh Key Token (Tùy chọn)</label>
+                <input type="text" id="new-key-custom" placeholder="Tự sinh nếu để trống" style="width: 100%; padding: 11px 14px; border-radius: 8px; background: rgba(5,8,7,0.8); border: 1px solid var(--border-color); color: #f0fdf4; font-family: 'JetBrains Mono', monospace;">
+              </div>
+
+              <button type="submit" class="btn btn-primary" style="padding: 11px 20px; white-space: nowrap;">
+                <i class="fa-solid fa-key"></i> Tạo Key
+              </button>
+            </form>
+          </div>
+
+          <!-- Keys Table Card -->
+          <div class="section-card">
+            <div class="card-header">
+              <div>
+                <h3><i class="fa-solid fa-vault"></i> Danh Sách API Key</h3>
+                <p class="section-desc">Quản lý, ẩn/hiện, tạm dừng hoặc thu hồi các khóa truy cập</p>
+              </div>
+              <button class="btn btn-secondary" onclick="loadSecurityData()" style="padding: 8px 14px; font-size: 13px;">
+                <i class="fa-solid fa-rotate"></i> Làm Mới
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Tên Key & ID</th>
+                    <th>API Key Token</th>
+                    <th>Rate Limit</th>
+                    <th>Lượt Gọi</th>
+                    <th>Lần Cuối Dùng</th>
+                    <th>Trạng Thái</th>
+                    <th>Hành Động</th>
+                  </tr>
+                </thead>
+                <tbody id="api-keys-tbody">
+                  <!-- Rendered via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 7: API DOCS & INTEGRATION -->
         <section id="tab-api-docs" class="tab-pane">
           <div class="docs-grid">
             <div class="section-card">
               <h3><i class="fa-solid fa-terminal"></i> Hướng Dẫn Tích Hợp Cho Bên Thứ 3</h3>
-              <p class="section-desc">Server cung cấp đầy đủ các endpoint chuẩn OpenAI để kết nối vào bất kỳ hệ thống nào.</p>
+              <p class="section-desc">Server cung cấp đầy đủ các endpoint chuẩn OpenAI để kết nối vào bất kỳ hệ thống nào (Cursor, NextChat, Python SDK, Bot Telegram...).</p>
 
               <div class="doc-block">
-                <h4>1. Endpoint Tạo Ảnh (Chuẩn OpenAI DALL-E)</h4>
-                <div class="code-box">
+                <h4>1. Endpoint Tạo Ảnh & Chat Chuẩn OpenAI</h4>
+                <div class="code-box" style="margin-bottom: 8px;">
                   <code>POST http://127.0.0.1:8000/v1/images/generations</code>
+                </div>
+                <div class="code-box">
+                  <code>POST http://127.0.0.1:8000/v1/chat/completions</code>
                 </div>
               </div>
 
               <div class="doc-block">
-                <h4>2. Mẫu gọi bằng Python (requests / openai sdk)</h4>
+                <h4>2. Mẫu gọi bằng Python (kèm Bearer API Key)</h4>
                 <pre class="code-snippet"><code>import requests
 
 url = "http://127.0.0.1:8000/v1/images/generations"
+headers = {
+    "Authorization": "Bearer YOUR_GROK_API_KEY",
+    "Content-Type": "application/json"
+}
 payload = {
     "model": "grok-imagine-image",
     "prompt": "Một chú mèo phi hành gia mặc áo giáp neon đứng trên sao hỏa",
     "size": "1024x1024"
 }
 
-response = requests.post(url, json=payload)
+response = requests.post(url, json=payload, headers=headers)
 data = response.json()
 print("Link ảnh tạo được:", data["data"][0]["url"])</code></pre>
                 <button class="btn-copy-code" onclick="copyCode(this)"><i class="fa-solid fa-copy"></i> Copy Code</button>
@@ -468,6 +626,7 @@ print("Link ảnh tạo được:", data["data"][0]["url"])</code></pre>
               <div class="doc-block">
                 <h4>3. Mẫu gọi bằng cURL (Terminal / Postman)</h4>
                 <pre class="code-snippet"><code>curl -X POST http://127.0.0.1:8000/v1/images/generations \
+  -H "Authorization: Bearer YOUR_GROK_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "grok-imagine-image",
@@ -475,11 +634,20 @@ print("Link ảnh tạo được:", data["data"][0]["url"])</code></pre>
   }'</code></pre>
                 <button class="btn-copy-code" onclick="copyCode(this)"><i class="fa-solid fa-copy"></i> Copy cURL</button>
               </div>
+
+              <div class="doc-block">
+                <h4>4. Cấu hình vào Cursor IDE / NextChat / LobeChat</h4>
+                <div style="background: rgba(5,8,7,0.8); padding: 14px; border-radius: 8px; border: 1px solid var(--border-color); color: #a7f3d0; font-size: 13px; line-height: 1.6;">
+                  <p><strong style="color: #00f5a0;">• Base URL:</strong> <code>http://127.0.0.1:8000/v1</code></p>
+                  <p><strong style="color: #00f5a0;">• API Key:</strong> <code>grok-sk-xxxxxxxxxxxxxxxx</code> (Tạo trong tab API Key & Bảo Mật)</p>
+                  <p><strong style="color: #00f5a0;">• Model Name:</strong> <code>grok-imagine-image</code> hoặc <code>grok-imagine-image-2.0</code></p>
+                </div>
+              </div>
             </div>
 
             <div class="section-card">
               <h3><i class="fa-solid fa-globe"></i> Mở Public Cho Bên Ngoài Gọi Qua Internet</h3>
-              <p class="section-desc">Để người khác ở ngoài mạng internet có thể gọi API vào máy bạn miễn phí:</p>
+              <p class="section-desc">Để người khác ở ngoài mạng internet có thể gọi API vào máy bạn an toàn có API Key:</p>
 
               <div class="step-guide">
                 <div class="guide-step">
@@ -500,8 +668,8 @@ print("Link ảnh tạo được:", data["data"][0]["url"])</code></pre>
                 <div class="guide-step">
                   <div class="step-number">3</div>
                   <div class="step-text">
-                    <strong>Cung cấp Endpoint cho bên thứ 3:</strong>
-                    <p>Bên ngoài chỉ cần gửi request vào <code>https://xxx.trycloudflare.com/v1/images/generations</code> là tạo ảnh được ngay!</p>
+                    <strong>Bật xác thực API Key & cấp key cho người dùng:</strong>
+                    <p>Vào tab <strong>API Key & Bảo Mật</strong>, gạt công tắc <em>Bắt buộc xác thực API Key</em> sang BẬT, tạo Key riêng cho từng người với Rate Limit mong muốn!</p>
                   </div>
                 </div>
               </div>

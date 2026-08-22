@@ -8,7 +8,7 @@ grok_free.py — Đăng ký tự động tài khoản Grok (Phiên bản miễn 
 - Xoay IP: Hỗ trợ Clash proxy rotation hoặc direct mode
 - Đầu ra: SSO + email:password:sso → keys/
 """
-import os, re, sys, json, time, random, string, struct, urllib.parse, argparse
+import os, re, sys, json, time, random, string, struct, subprocess, urllib.parse, argparse, threading, shutil
 
 # common.py tự động fix SSL certs + setup console UTF-8 khi import
 import common  # noqa: F401
@@ -19,6 +19,10 @@ load_dotenv()
 from curl_cffi import requests as cf_req
 from DrissionPage import ChromiumPage, ChromiumOptions
 import requests  # requests chuẩn cho SSO redirect, tương thích auth.grokipedia.com
+
+# ── Thread Locks ──
+proxy_lock = threading.Lock()
+file_save_lock = threading.Lock()
 
 # ── Cấu hình ──
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -67,19 +71,20 @@ def save_good_proxy(proxy_url):
     global GOOD_PROXIES_LIST
     if not proxy_url:
         return
-    proxy_url = proxy_url.strip()
-    if proxy_url in GOOD_PROXIES_LIST:
-        GOOD_PROXIES_LIST.remove(proxy_url)
-    GOOD_PROXIES_LIST.insert(0, proxy_url)
-    try:
-        lines = [l.strip() for l in open(GOOD_PROXIES_FILE, encoding="utf-8", errors="ignore") if l.strip()]
-        new_lines = [proxy_url] + [l for l in lines if l != proxy_url]
-        with open(GOOD_PROXIES_FILE, "w", encoding="utf-8") as f:
-            for l in new_lines:
-                f.write(l + "\n")
-        print(f"  [Proxy VIP] ⭐ Đã đưa Proxy THÀNH CÔNG {proxy_url} lên ĐẦU DANH SÁCH ưu tiên!")
-    except Exception:
-        pass
+    with proxy_lock:
+        proxy_url = proxy_url.strip()
+        if proxy_url in GOOD_PROXIES_LIST:
+            GOOD_PROXIES_LIST.remove(proxy_url)
+        GOOD_PROXIES_LIST.insert(0, proxy_url)
+        try:
+            lines = [l.strip() for l in open(GOOD_PROXIES_FILE, encoding="utf-8", errors="ignore") if l.strip()]
+            new_lines = [proxy_url] + [l for l in lines if l != proxy_url]
+            with open(GOOD_PROXIES_FILE, "w", encoding="utf-8") as f:
+                for l in new_lines:
+                    f.write(l + "\n")
+            print(f"  [Proxy VIP] ⭐ Đã đưa Proxy THÀNH CÔNG {proxy_url} lên ĐẦU DANH SÁCH ưu tiên!")
+        except Exception:
+            pass
 
 _proxy_strikes = {}  # 记录每个 Proxy 失败次数，3 次才真正删除
 
@@ -88,29 +93,30 @@ def remove_bad_proxy(proxy_url):
     global PROXIES_LIST, GOOD_PROXIES_LIST, _proxy_strikes
     if not proxy_url:
         return
-    raw_ip_port = proxy_url.replace("http://", "").replace("https://", "").replace("socks5://", "").replace("socks4://", "").strip()
-    _proxy_strikes[raw_ip_port] = _proxy_strikes.get(raw_ip_port, 0) + 1
-    strikes = _proxy_strikes[raw_ip_port]
+    with proxy_lock:
+        raw_ip_port = proxy_url.replace("http://", "").replace("https://", "").replace("socks5://", "").replace("socks4://", "").strip()
+        _proxy_strikes[raw_ip_port] = _proxy_strikes.get(raw_ip_port, 0) + 1
+        strikes = _proxy_strikes[raw_ip_port]
 
-    if strikes < 3:
-        print(f"  [Proxy] ⚠️ {raw_ip_port} 失败 {strikes}/3 次，暂时保留")
-        return
+        if strikes < 3:
+            print(f"  [Proxy] ⚠️ {raw_ip_port} 失败 {strikes}/3 次，暂时保留")
+            return
 
-    # 3 次失败，永久删除
-    if proxy_url in PROXIES_LIST:
-        PROXIES_LIST.remove(proxy_url)
-    if proxy_url in GOOD_PROXIES_LIST:
-        GOOD_PROXIES_LIST.remove(proxy_url)
-    for pfile in [os.path.join(SCRIPT_DIR, "proxies.txt"), GOOD_PROXIES_FILE]:
-        if os.path.exists(pfile):
-            try:
-                lines = open(pfile, encoding="utf-8", errors="ignore").readlines()
-                new_lines = [l for l in lines if raw_ip_port not in l]
-                with open(pfile, "w", encoding="utf-8") as f:
-                    f.writelines(new_lines)
-            except Exception:
-                pass
-    print(f"  [Proxy Prune] 🗑️ {raw_ip_port} 连续失败 3 次，已永久删除")
+        # 3 次失败，永久删除
+        if proxy_url in PROXIES_LIST:
+            PROXIES_LIST.remove(proxy_url)
+        if proxy_url in GOOD_PROXIES_LIST:
+            GOOD_PROXIES_LIST.remove(proxy_url)
+        for pfile in [os.path.join(SCRIPT_DIR, "proxies.txt"), GOOD_PROXIES_FILE]:
+            if os.path.exists(pfile):
+                try:
+                    lines = open(pfile, encoding="utf-8", errors="ignore").readlines()
+                    new_lines = [l for l in lines if raw_ip_port not in l]
+                    with open(pfile, "w", encoding="utf-8") as f:
+                        f.writelines(new_lines)
+                except Exception:
+                    pass
+        print(f"  [Proxy Prune] 🗑️ {raw_ip_port} 连续失败 3 次，已永久删除")
 
 _last_used_proxy = None
 
@@ -350,42 +356,48 @@ class GPTMailInbox:
 
 # ═══════════════════════ 浏览器初始化 ═══════════════════════
 
-def browser_init(headless=True, direct=False):
-    """打开注册页 → 获取 Action ID + Site Key + Turnstile Token + State Tree"""
+def browser_init(headless=True, direct=False, worker_tag=""):
+    """Mở trang đăng ký → Lấy Action ID + Site Key + Turnstile Token + State Tree"""
 
     co = ChromiumOptions()
     co.auto_port()
     if headless:
         co.set_argument("--window-position=-32000,-32000")
-    # 强制将 Chrome 缓存及 Profile 存储在 D 盘 workspace 中，每个 Session 独立目录避免状态冲突
-    chrome_temp = os.path.join(SCRIPT_DIR, "temp_chrome", f"prof_{random.randint(10000, 99999)}")
-    os.makedirs(chrome_temp, exist_ok=True)
-    co.set_argument(f"--user-data-dir={chrome_temp}")
+
+    # Chrome Flags tiêu chuẩn chống bot và an toàn cho WebGL Turnstile
     co.set_argument("--disable-blink-features=AutomationControlled")
     co.set_argument("--no-sandbox")
-    co.set_argument("--disable-gpu")
     co.set_argument("--incognito")
-    # 随机窗口大小减少指纹一致性
-    w = random.randint(1200, 1400)
-    h = random.randint(800, 1000)
+    co.set_argument("--mute-audio")
+    co.set_argument("--disable-extensions")
+
+    chrome_temp = os.path.join(SCRIPT_DIR, "temp_chrome", f"prof_{int(time.time()*1000)}_{random.randint(1000, 9999)}")
+    os.makedirs(chrome_temp, exist_ok=True)
+    co.set_argument(f"--user-data-dir={chrome_temp}")
+
+    # Kích thước cửa sổ chuẩn cho Turnstile render
+    w = random.randint(1200, 1366)
+    h = random.randint(768, 900)
     co.set_argument(f"--window-size={w},{h}")
+
     cur_proxy = get_best_proxy(direct=direct)
     if cur_proxy:
-        # Chrome --proxy-server cần giữ nguyên socks5:// hoặc socks4://, chỉ bỏ http://
         if cur_proxy.startswith("socks5://") or cur_proxy.startswith("socks4://"):
-            proxy_addr = cur_proxy  # giữ nguyên socks5://ip:port
+            proxy_addr = cur_proxy
         else:
             proxy_addr = cur_proxy.replace("http://", "").replace("https://", "")
         co.set_argument(f"--proxy-server={proxy_addr}")
-        print(f"  [Proxy] 🔒 100% Proxy Mode: {proxy_addr}")
+        print(f"{worker_tag}  [Proxy] 🔒 Proxy Mode: {proxy_addr}")
     else:
-        print(f"  [Network] 🌐 Direct Mode: Sử dụng mạng trực tiếp (Không qua proxy)")
+        print(f"{worker_tag}  [Network] 🌐 Direct Mode: Mạng trực tiếp")
+
+    page = None
     try:
-        co.set_timeouts(12)
+        co.set_timeouts(15)
         page = ChromiumPage(co)
-        print("[Browser] 🌐 Đang mở trang đăng ký Grok...")
-        page.get(f"{SITE_URL}/sign-up?redirect=grok-com", timeout=12)
-        time.sleep(3)
+        print(f"{worker_tag}[Browser] 🌐 Đang mở trang đăng ký Grok...")
+        page.get(f"{SITE_URL}/sign-up?redirect=grok-com", timeout=15)
+        time.sleep(2.5)
 
         html = page.html
         if not html or len(html) < 200:
@@ -395,10 +407,16 @@ def browser_init(headless=True, direct=False):
     except Exception as e:
         if cur_proxy:
             remove_bad_proxy(cur_proxy)
-        try:
-            page.quit()
-        except Exception:
-            pass
+        if page:
+            try:
+                page.quit()
+            except Exception:
+                pass
+        if os.path.exists(chrome_temp):
+            try:
+                shutil.rmtree(chrome_temp, ignore_errors=True)
+            except Exception:
+                pass
         raise e
 
     # --- Site Key ---
@@ -406,7 +424,7 @@ def browser_init(headless=True, direct=False):
     m = re.search(r'sitekey":"(0x4[a-zA-Z0-9_-]+)"', html)
     if m:
         site_key = m.group(1)
-    print(f"[Browser] 🔑 SiteKey: {site_key}")
+    print(f"{worker_tag}[Browser] 🔑 SiteKey: {site_key}")
 
     # --- Action ID ---
     js_urls = re.findall(r"/_next/static/chunks/[^\"'\s>]+\.js", html)
@@ -418,13 +436,12 @@ def browser_init(headless=True, direct=False):
         url = js_path if js_path.startswith("http") else f"{SITE_URL}{js_path}"
         try:
             js = js_sess.get(url, timeout=15).text
-            # 支持新旧两种格式: release:"hex40" 或旧版 7f+hex40
             m = re.search(r'release[:\s]*["\']([a-fA-F0-9]{40})["\']', js)
             if not m:
                 m = re.search(r'7f[a-fA-F0-9]{40}', js)
             if m:
                 action_id = m.group(1) if m.lastindex else m.group(0)
-                print(f"[Browser] 🆔 ActionID: {action_id}")
+                print(f"{worker_tag}[Browser] 🆔 ActionID: {action_id}")
                 break
         except Exception:
             continue
@@ -435,10 +452,12 @@ def browser_init(headless=True, direct=False):
                 cached = open(cache_file, encoding="utf-8").read().strip()
                 if re.match(r"^(7f)?[a-fA-F0-9]{40}$", cached):
                     action_id = cached
-                    print(f"[Browser] 💾 Sử dụng Action ID từ cache: {action_id}")
+                    print(f"{worker_tag}[Browser] 💾 Sử dụng Action ID từ cache: {action_id}")
         except Exception:
             pass
     if not action_id:
+        if page:
+            page.quit()
         raise RuntimeError("Không tìm thấy Action ID, không thể đăng ký")
 
     # --- State Tree ---
@@ -448,7 +467,7 @@ def browser_init(headless=True, direct=False):
         state_tree = m.group(1)
 
     # --- Click chọn email ---
-    print("[Browser] 🖱️ Đang click chọn đăng ký bằng Email...")
+    print(f"{worker_tag}[Browser] 🖱️ Đang click chọn đăng ký bằng Email...")
     page.run_js('''
     var all=document.querySelectorAll('button,[role=button]');
     for(var i=0;i<all.length;i++){
@@ -459,17 +478,17 @@ def browser_init(headless=True, direct=False):
         }
     }
     ''')
-    time.sleep(3)
+    time.sleep(2.5)
 
     # --- Turnstile ---
-    print("[Browser] 🛡️ Đang chờ giải mã Cloudflare Turnstile...")
+    print(f"{worker_tag}[Browser] 🛡️ Đang chờ giải mã Cloudflare Turnstile...")
     ts_token = ""
     for attempt in range(4):
         time.sleep(2)
         ts_token = page.run_js(
             'return document.querySelector("[name=cf-turnstile-response]")?.value||""')
         if len(ts_token) > 50:
-            print(f"[Browser] ⚡ Turnstile tự động vượt qua (Lần thử {attempt+1})")
+            print(f"{worker_tag}[Browser] ⚡ Turnstile tự động vượt qua (Lần thử {attempt+1})")
             break
         if attempt in (2, 5, 10):
             try:
@@ -480,7 +499,7 @@ def browser_init(headless=True, direct=False):
                 pass
 
     if len(ts_token) < 50:
-        print("[Browser] ⏳ Chờ tự động quá lâu, tiến hành kích hoạt thủ công (timeout 70s)...")
+        print(f"{worker_tag}[Browser] ⏳ Chờ tự động quá lâu, tiến hành kích hoạt thủ công (timeout 60s)...")
         ts_token = page.run_js('''
         var _sitekey = arguments[0];
         return new Promise(function(resolve, _reject) {
@@ -490,7 +509,7 @@ def browser_init(headless=True, direct=False):
             tsDiv.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999';
             document.body.appendChild(tsDiv);
 
-            var timeout = setTimeout(function() { resolve('timeout'); }, 60000);
+            var timeout = setTimeout(function() { resolve('timeout'); }, 50000);
 
             try {
                 turnstile.render('#'+tsDiv.id, {
@@ -511,24 +530,41 @@ def browser_init(headless=True, direct=False):
                 resolve('exception:' + (e && e.message ? e.message : String(e)));
             }
         });
-        ''', site_key, timeout=75)
-        print(f"[Browser] 🔄 Kết quả kích hoạt Turnstile: {ts_token[:80] if ts_token else 'None'}...")
+        ''', site_key, timeout=65)
+        print(f"{worker_tag}[Browser] 🔄 Kết quả kích hoạt Turnstile: {ts_token[:80] if ts_token else 'None'}...")
 
     if not ts_token or ts_token.startswith('timeout') or ts_token.startswith('error'):
         ts_token = page.run_js(
             'return document.querySelector("[name=cf-turnstile-response]")?.value||""')
         if len(ts_token) < 50:
-            page.quit()
+            if page:
+                page.quit()
+            if os.path.exists(chrome_temp):
+                try:
+                    shutil.rmtree(chrome_temp, ignore_errors=True)
+                except Exception:
+                    pass
             raise RuntimeError(f"Turnstile chưa giải quyết được: {ts_token}")
 
-    print(f"[Browser] ✅ Cloudflare Turnstile đã giải quyết thành công! ({len(ts_token)} chars)")
+    print(f"{worker_tag}[Browser] ✅ Cloudflare Turnstile giải quyết thành công! ({len(ts_token)} chars)")
+
+    # ── Giải phóng Chrome & RAM ngay lập tức ──
+    try:
+        page.quit()
+    except Exception:
+        pass
+    if os.path.exists(chrome_temp):
+        try:
+            shutil.rmtree(chrome_temp, ignore_errors=True)
+        except Exception:
+            pass
 
     return {
         "site_key": site_key,
         "action_id": action_id,
         "state_tree": state_tree,
         "ts_token": ts_token,
-        "page": page,
+        "page": None,
         "cur_proxy": cur_proxy,
     }
 
@@ -599,25 +635,25 @@ def solve_turnstile(page, site_key):
     return ts_token
 
 
-def register_one(cfg):
+def register_one(cfg, worker_tag=""):
     """Đăng ký 1 tài khoản Grok → Trả về (email, password, sso) hoặc None"""
     provider = cfg.get("email_provider", "mailtm")
     cur_proxy = cfg.get("cur_proxy")
     # ── Tạo email ──
-    print(f"[Mail] 📧 Đang tạo hộp thư {provider}...")
+    print(f"{worker_tag}[Mail] 📧 Đang tạo hộp thư {provider}...")
     try:
         from email_service import EmailService
         email_svc = EmailService(provider=provider, proxies={"http": cur_proxy, "https": cur_proxy} if cur_proxy else None)
         token_like, email = email_svc.create_email()
         if not email:
-            print(f"[Mail] ❌ Dịch vụ {provider} trả về None")
+            print(f"{worker_tag}[Mail] ❌ Dịch vụ {provider} trả về None")
             if cur_proxy:
                 remove_bad_proxy(cur_proxy)
             return None
     except Exception as e:
-        print(f"[Mail] ❌ Dịch vụ {provider} lỗi: {e}")
+        print(f"{worker_tag}[Mail] ❌ Dịch vụ {provider} lỗi: {e}")
         return None
-    print(f"[Mail] 📬 Email: {email}")
+    print(f"{worker_tag}[Mail] 📬 Email: {email}")
 
     # ── curl_cffi session ──
     sess = cf_req.Session(impersonate="chrome120")
@@ -629,16 +665,16 @@ def register_one(cfg):
         pass
 
     # ── Step 1: Gửi mã xác nhận OTP (gRPC) ──
-    print(f"[{email}] 📤 Đang gửi mã OTP xác nhận (gRPC)...")
+    print(f"{worker_tag}[{email}] 📤 Đang gửi mã OTP xác nhận (gRPC)...")
     if not send_email_code_grpc(sess, email):
-        print(f"[{email}] ❌ Gửi mã OTP thất bại")
+        print(f"{worker_tag}[{email}] ❌ Gửi mã OTP thất bại")
         if cur_proxy:
             remove_bad_proxy(cur_proxy)
         return None
-    print(f"[{email}] ✅ Mã OTP đã được gửi")
+    print(f"{worker_tag}[{email}] ✅ Mã OTP đã được gửi")
 
     # ── Step 2: Đợi email nhận mã OTP ──
-    print(f"[{email}] ⏳ Đang đợi email chứa mã OTP...")
+    print(f"{worker_tag}[{email}] ⏳ Đang đợi email chứa mã OTP...")
     code = None
     for _ in range(36):  # 36 x 5s = 180s
         time.sleep(5)
@@ -649,23 +685,23 @@ def register_one(cfg):
                 code = m.group(1) + m.group(2)
                 break
     if not code:
-        print(f"[{email}] ⚠️ Không nhận được mã OTP (Quá thời gian chờ)")
+        print(f"{worker_tag}[{email}] ⚠️ Không nhận được mã OTP (Quá thời gian chờ)")
         return None
-    print(f"[{email}] 🔑 Đã nhận mã OTP: {code}")
+    print(f"{worker_tag}[{email}] 🔑 Đã nhận mã OTP: {code}")
 
     # ── Step 3: Xác thực mã OTP (gRPC) ──
-    print(f"[{email}] 🔍 Đang xác thực mã OTP (gRPC)...")
+    print(f"{worker_tag}[{email}] 🔍 Đang xác thực mã OTP (gRPC)...")
     if not verify_email_code_grpc(sess, email, code):
-        print(f"[{email}] ❌ Mã OTP không hợp lệ")
+        print(f"{worker_tag}[{email}] ❌ Mã OTP không hợp lệ")
         return None
-    print(f"[{email}] ✅ Mã OTP chính xác")
+    print(f"{worker_tag}[{email}] ✅ Mã OTP chính xác")
 
     # ── Step 4: Turnstile token ──
     ts_token = cfg.get("ts_token")
     if not ts_token:
-        print(f"[{email}] ❌ Thiếu Turnstile token")
+        print(f"{worker_tag}[{email}] ❌ Thiếu Turnstile token")
         return None
-    print(f"[{email}] ✅ Turnstile token đã sẵn sàng ({len(ts_token)} chars)")
+    print(f"{worker_tag}[{email}] ✅ Turnstile token đã sẵn sàng ({len(ts_token)} chars)")
 
     # ── Step 5: Chuẩn bị thông tin tài khoản ──
     password = rand_str(14) + "Aa1!"
@@ -673,7 +709,7 @@ def register_one(cfg):
     last = rand_name()
 
     # ── Step 6: Gửi dữ liệu đăng ký POST ──
-    print(f"[{email}] 🚀 Đang gửi dữ liệu tạo tài khoản...")
+    print(f"{worker_tag}[{email}] 🚀 Đang gửi dữ liệu tạo tài khoản...")
     try:
         sess.get(SITE_URL, timeout=10)
     except Exception:
@@ -706,13 +742,13 @@ def register_one(cfg):
 
     try:
         r = sess.post(f"{SITE_URL}/sign-up", json=payload, headers=headers, timeout=30)
-        print(f"[{email}] Trạng thái POST: {r.status_code}")
+        print(f"{worker_tag}[{email}] Trạng thái POST: {r.status_code}")
     except Exception as e:
-        print(f"[{email}] ❌ Lỗi gửi POST: {e}")
+        print(f"{worker_tag}[{email}] ❌ Lỗi gửi POST: {e}")
         return None
 
     if r.status_code != 200:
-        print(f"[{email}] ❌ Đăng ký thất bại: {r.text[:300]}")
+        print(f"{worker_tag}[{email}] ❌ Đăng ký thất bại: {r.text[:300]}")
         return None
 
     # ── Step 7: Trích xuất SSO Token ──
@@ -731,7 +767,7 @@ def register_one(cfg):
                 sess_cookie = j_obj.get("sessionCookie", "")
                 if "sso=" in sess_cookie:
                     sso = sess_cookie.split("sso=")[1].split(";")[0]
-                    print(f"[{email}] 🎉 Trích xuất thành công SSO Token từ {hdr_name} Header!")
+                    print(f"{worker_tag}[{email}] 🎉 Trích xuất thành công SSO Token từ {hdr_name} Header!")
                     break
             except Exception as e:
                 pass
@@ -741,7 +777,7 @@ def register_one(cfg):
         for c_name in ("sso", "sso-rw", "auth_token"):
             if sess.cookies.get(c_name):
                 sso = sess.cookies.get(c_name)
-                print(f"[{email}] 🎉 Trích xuất thành công SSO Token từ Session Cookie ({c_name})!")
+                print(f"{worker_tag}[{email}] 🎉 Trích xuất thành công SSO Token từ Session Cookie ({c_name})!")
                 break
 
     # Cách 3: Tìm set-cookie URL trong response body
@@ -758,7 +794,7 @@ def register_one(cfg):
                 break
 
         if sso_url:
-            print(f"[{email}] 🔗 SSO URL: {sso_url[:100]}...")
+            print(f"{worker_tag}[{email}] 🔗 SSO URL: {sso_url[:100]}...")
             try:
                 rs = requests.Session()
                 if PROXY:
@@ -793,21 +829,22 @@ def register_one(cfg):
                         except Exception:
                             sso = q_str
                         if sso:
-                            print(f"[{email}] 🎉 Trích xuất thành công SSO Token từ tham số URL q!")
+                            print(f"{worker_tag}[{email}] 🎉 Trích xuất thành công SSO Token từ tham số URL q!")
                 except Exception:
                     pass
 
     if sso:
-        print(f"[{email}] ✅ ĐĂNG KÝ THÀNH CÔNG! SSO Token: {sso[:30]}...")
+        print(f"{worker_tag}[{email}] ✅ ĐĂNG KÝ THÀNH CÔNG! SSO Token: {sso[:30]}...")
         if cur_proxy:
             save_good_proxy(cur_proxy)
-        with open(os.path.join(OUTPUT_DIR, "grok.txt"), "a", encoding="utf-8") as f:
-            f.write(sso + "\n")
-        with open(os.path.join(OUTPUT_DIR, "accounts.txt"), "a", encoding="utf-8") as f:
-            f.write(f"{email}:{password}:{sso}\n")
+        with file_save_lock:
+            with open(os.path.join(OUTPUT_DIR, "grok.txt"), "a", encoding="utf-8") as f:
+                f.write(sso + "\n")
+            with open(os.path.join(OUTPUT_DIR, "accounts.txt"), "a", encoding="utf-8") as f:
+                f.write(f"{email}:{password}:{sso}\n")
         return (email, password, sso)
     else:
-        print(f"[{email}] ⚠️ Không tìm thấy SSO Token trong phản hồi, 300 ký tự đầu:")
+        print(f"{worker_tag}[{email}] ⚠️ Không tìm thấy SSO Token trong phản hồi, 300 ký tự đầu:")
         print(f"  {resp_text[:300]}")
 
     return None
@@ -816,117 +853,122 @@ def register_one(cfg):
 # ═══════════════════════ 主程序 ═══════════════════════
 
 def main():
-    parser = argparse.ArgumentParser(description="Grok 全自动注册")
-    parser.add_argument("--count", type=int, default=3, help="注册数量（默认 3）")
+    import concurrent.futures
+
+    parser = argparse.ArgumentParser(description="Grok 全自动注册 · Siêu Tiết Kiệm RAM & Đa Luồng")
+    parser.add_argument("--count", "-c", type=int, default=3, help="Tổng số tài khoản cần tạo (mặc định 3)")
+    parser.add_argument("--threads", "-t", type=int, default=None, help="Số luồng chạy song song (để trống = hệ thống tự tính)")
     parser.add_argument("--no-rotate", action="store_true", help="禁用 IP 轮换")
-    parser.add_argument("--rotate-interval", type=int, default=1, help="每注册 N 个后切换 IP（默认 1，即每次切换）")
-    parser.add_argument("--min-delay", type=int, default=8, help="注册间隔最小值（秒，默认 8）")
-    parser.add_argument("--max-delay", type=int, default=25, help="注册间隔最大值（秒，默认 25）")
-    parser.add_argument("--rotate-region", action="store_true", help="切换不同区域节点（而非随机节点）")
+    parser.add_argument("--rotate-interval", type=int, default=1, help="每注册 N 个后切换 IP（默认 1）")
+    parser.add_argument("--min-delay", type=int, default=1, help="注册间隔最小值（秒，默认 1）")
+    parser.add_argument("--max-delay", type=int, default=5, help="注册间隔最大值（秒，默认 5）")
+    parser.add_argument("--rotate-region", action="store_true", help="切换不同区域节点")
     parser.add_argument("--email-provider", choices=["mailtm", "mailgw", "tempmail", "guerrilla", "gptmail", "luckmail", "gmail", "tmail", "fce", "outlook", "sfrankie"], default=os.getenv("EMAIL_PROVIDER", "mailtm"), help="Nhà cung cấp email ảo")
-    parser.add_argument("--headless", action="store_true", default=False, help="无头模式（默认 False）")
-    parser.add_argument("--no-headless", dest="headless", action="store_false", help="显示窗口模式")
+    parser.add_argument("--headless", action="store_true", default=True, help="Chế độ ẩn cửa sổ tiết kiệm RAM (mặc định True)")
+    parser.add_argument("--no-headless", dest="headless", action="store_false", help="Hiển thị cửa sổ Chrome")
     parser.add_argument("--direct", "--no-proxy", dest="direct", action="store_true", default=False, help="Sử dụng mạng trực tiếp (Direct Connection), không qua proxy")
     args = parser.parse_args()
 
-    print("=" * 55)
-    print(f"Grok 注册 · 免费版 v4 (Provider={args.email_provider} + DrissionPage + gRPC)")
-    print(f"数量: {args.count}  IP轮换: {'✅' if not args.no_rotate and HAS_CLASH else '❌'}  Direct: {'✅' if args.direct else '❌'}")
-    print("=" * 55)
+    is_auto_threads = False
+    if args.threads is None or args.threads <= 0:
+        is_auto_threads = True
+        if args.count <= 1:
+            max_threads = 1
+        elif not args.direct:
+            max_threads = min(args.count, 5 if args.count >= 8 else 4 if args.count >= 4 else args.count)
+        else:
+            max_threads = min(args.count, 4 if args.count >= 8 else 3 if args.count >= 3 else 2)
+    else:
+        max_threads = max(1, min(args.threads, args.count))
 
-    # ── Clash: 快照当前节点（注册完恢复） ──
+    thread_str = f"{max_threads} (⚡ Tự động tối ưu)" if is_auto_threads else str(max_threads)
+
+    print("=" * 60)
+    print(f"🚀 GROK REGISTER · ULTRA LOW-MEMORY MULTI-THREADING")
+    print(f"🎯 Mục tiêu: {args.count} nick | ⚡ Số luồng song song: {thread_str}")
+    print(f"📧 Email Provider: {args.email_provider.upper()} | 🌐 Chế độ mạng: {'Direct' if args.direct else 'Proxy Rotation'}")
+    print("=" * 60)
+
+    # ── Clash: 快照当前节点 ──
     original_node = None
-    if not args.no_rotate and HAS_CLASH:
+    if not args.no_rotate and HAS_CLASH and max_threads == 1:
         try:
             original_node = snapshot()
             h = clash_health()
-            # 显示低延迟节点数
             fast, slow = list_fast_nodes()
             print(f"[Clash] 快照: {h['current_node'][:40]}")
-            print(f"[Clash] 出口 IP: {h['current_ip']}  ({h['region']})")
-            print(f"[Clash] 低延迟节点: {len(fast)}  慢/断线: {len(slow)}")
-            if slow:
-                for n, reason in slow[:3]:
-                    print(f"[Clash]   ⚠ {n[:35]} — {reason}")
+            print(f"[Clash] 出口 IP: {h['current_ip']} ({h['region']})")
         except Exception as e:
             print(f"[Clash] ⚠️ 检查失败: {e}")
 
-    # 2. 注册循环
     success = 0
     fail = 0
     t0 = time.time()
-    used_regions = set()
+    stats_lock = threading.Lock()
 
-    for i in range(args.count):
-        print(f"\n{'─'*40}")
-        print(f"第 {i+1}/{args.count} 次注册")
-        print(f"{'─'*40}")
-
-        # ── IP 轮换 ──
-        if not args.no_rotate and HAS_CLASH and i > 0 and i % args.rotate_interval == 0:
-            try:
-                if args.rotate_region:
-                    switch_region(exclude_regions=used_regions)
-                else:
-                    random_switch()
-                new_ip = get_current_ip()
-                if new_ip:
-                    print(f"  [IP] 新出口 IP: {new_ip}")
-            except Exception as e:
-                print(f"  [IP] ⚠️ 切换失败: {e}，继续使用当前 IP")
+    def worker_job(task_idx):
+        nonlocal success, fail
+        worker_tag = f"[T{task_idx+1}] " if max_threads > 1 else ""
+        
+        # Stagger nhẹ để tránh đồng thời mở socket cùng 1 mili-giây
+        if max_threads > 1 and task_idx < max_threads:
+            time.sleep(task_idx * 3.0)
 
         cfg = None
         try:
-            cfg = browser_init(headless=args.headless, direct=args.direct)
+            cfg = browser_init(headless=args.headless, direct=args.direct, worker_tag=worker_tag)
             if cfg:
                 cfg["email_provider"] = args.email_provider
-                result = register_one(cfg)
-                if result:
-                    success += 1
-                    avg = (time.time() - t0) / success
-                    print(f"  ✅ 成功={success} 失败={fail} 均速={avg:.0f}s/个")
-                else:
-                    fail += 1
-                    print(f"  ❌ 失败 成功={success} 失败={fail}")
-        except KeyboardInterrupt:
-            break
+                result = register_one(cfg, worker_tag=worker_tag)
+                with stats_lock:
+                    if result:
+                        success += 1
+                        avg = (time.time() - t0) / success
+                        print(f"{worker_tag}✅ ĐÃ XONG #{success}/{args.count} (Tốc độ trung bình: {avg:.1f}s/nick)")
+                        return True
+                    else:
+                        fail += 1
+                        print(f"{worker_tag}❌ THẤT BẠI #{fail}")
+                        return False
         except Exception as e:
-            fail += 1
-            print(f"[!] 异常: {e}")
-        finally:
-            if cfg and cfg.get("page"):
-                try:
-                    cfg["page"].quit()
-                except Exception:
-                    pass
-            if os.name == "nt":
-                os.system("taskkill /F /IM chrome.exe /T >nul 2>&1")
+            with stats_lock:
+                fail += 1
+                print(f"{worker_tag}[!] Lỗi: {e}")
+            return False
 
-        # ── 随机间隔（最后一个不需要等待） ──
-        if i < args.count - 1:
-            delay = random.uniform(args.min_delay, args.max_delay)
-            print(f"  ⏳ 等待 {delay:.1f}s...")
-            time.sleep(delay)
+    if max_threads == 1:
+        # Chế độ tuần tự
+        for i in range(args.count):
+            print(f"\n{'─'*40}\nTiến trình đăng ký {i+1}/{args.count}\n{'─'*40}")
+            worker_job(i)
+            if i < args.count - 1 and args.min_delay > 0:
+                delay = random.uniform(args.min_delay, args.max_delay)
+                time.sleep(delay)
+    else:
+        # Chế độ đa luồng song song
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+            futures = [executor.submit(worker_job, i) for i in range(args.count)]
+            for f in concurrent.futures.as_completed(futures):
+                pass
 
     # ── 恢复原始节点 ──
     if original_node and HAS_CLASH:
         try:
             restore(original_node)
         except Exception as e:
-            print(f"[Clash] ⚠️ 恢复节点失败: {e}")
+            pass
 
     elapsed = time.time() - t0
-    print(f"\n{'='*55}")
-    print(f"结束。成功={success} 失败={fail} 耗时={elapsed:.0f}s")
+    print(f"\n{'='*60}")
+    print(f"🏁 HOÀN TẤT: Thành công={success} | Thất bại={fail} | Tổng thời gian={elapsed:.1f}s")
     if success > 0:
-        print(f"SSO 已保存至: {OUTPUT_DIR}")
-    print(f"{'='*55}")
+        print(f"💾 Token SSO đã lưu tại: {os.path.join(OUTPUT_DIR, 'grok.txt')}")
+    print(f"{'='*60}")
 
-    # 🧹 自动清理所有 Chrome 残留进程（防止 Taskbar 堆积图标）
+    # 🧹 Dọn sạch tiến trình Chrome ngầm
     if sys.platform == "win32":
         try:
-            subprocess.run("taskkill /F /IM chrome.exe /T", shell=True,
-                           capture_output=True, timeout=10)
+            subprocess.run("taskkill /F /IM chrome.exe /T", shell=True, capture_output=True, timeout=5)
         except Exception:
             pass
 

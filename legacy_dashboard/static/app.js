@@ -40,6 +40,7 @@ function switchTab(tabId) {
     'studio': { title: 'Imagine Studio', sub: 'Trực tiếp vẽ và sinh ảnh HD từ công nghệ FLUX của Grok AI' },
     'gallery': { title: 'Lịch Sử & Bộ Sưu Tập', sub: 'Thư viện toàn bộ các tác phẩm đã được tạo qua Web và API' },
     'accounts': { title: 'Kho Tài Khoản & Token', sub: 'Quản lý danh sách tài khoản xAI, trạng thái SSO và tự động bù acc' },
+    'security': { title: 'Quản Lý API Key & Bảo Mật', sub: 'Cấp phát API Key, cấu hình Rate Limit và bảo vệ cổng OpenAI API' },
     'requests': { title: 'Quản Lý Request & IP Traffic', sub: 'Theo dõi chi tiết mọi HTTP Request, mã phản hồi 200, 404, 500 và IP kết nối' },
     'api-docs': { title: 'Tích Hợp API', sub: 'Tài liệu hướng dẫn kết nối chuẩn OpenAI cho bên thứ ba' }
   };
@@ -52,12 +53,13 @@ function switchTab(tabId) {
   // Tab specific reloads
   if (tabId === 'dashboard' || tabId === 'gallery') loadHistoryData();
   if (tabId === 'accounts') loadAccountsData();
+  if (tabId === 'security') loadSecurityData();
   if (tabId === 'requests') loadRequestLogsData();
 }
 
 // ── Load All Data ──
 async function loadAllData() {
-  await Promise.all([loadStats(), loadModelsData(), loadHistoryData(), loadAccountsData(), loadRequestLogsData()]);
+  await Promise.all([loadStats(), loadModelsData(), loadHistoryData(), loadAccountsData(), loadSecurityData(), loadRequestLogsData()]);
 }
 
 // ── Models Registry ──
@@ -636,6 +638,254 @@ async function clearRequestLogs() {
     }
   } catch (err) {
     showToast('❌ Lỗi xóa log: ' + err.message);
+  }
+}
+
+// ── Security & API Key Management ──
+let currentSecurityConfig = { require_auth: false, global_rate_limit_rpm: 60 };
+let allApiKeys = [];
+
+async function loadSecurityData() {
+  try {
+    const [cfgRes, keysRes] = await Promise.all([
+      fetch('/api/security/config'),
+      fetch('/api/security/keys')
+    ]);
+
+    if (cfgRes.ok) {
+      currentSecurityConfig = await cfgRes.json();
+      const isAuth = !!currentSecurityConfig.require_auth;
+      const rpm = currentSecurityConfig.global_rate_limit_rpm || 60;
+
+      // Update stat cards
+      const modeEl = document.getElementById('stat-auth-mode');
+      const descEl = document.getElementById('stat-auth-desc');
+      const iconEl = document.getElementById('auth-status-icon');
+      const toggleEl = document.getElementById('toggle-require-auth');
+      const rpmInput = document.getElementById('input-global-rpm');
+      const globalRpmEl = document.getElementById('stat-global-rpm');
+
+      if (modeEl) modeEl.innerText = isAuth ? 'Đã Bật (Protected)' : 'Công Khai (Open)';
+      if (descEl) {
+        descEl.innerText = isAuth ? '🔒 Bắt buộc có API Key' : '🔓 Không bắt buộc Key';
+        descEl.className = isAuth ? 'stat-trend positive' : 'stat-trend neutral';
+      }
+      if (iconEl) {
+        iconEl.className = isAuth ? 'stat-icon icon-emerald' : 'stat-icon icon-amber';
+        iconEl.innerHTML = isAuth ? '<i class="fa-solid fa-lock"></i>' : '<i class="fa-solid fa-lock-open"></i>';
+      }
+      if (toggleEl) toggleEl.checked = isAuth;
+      if (rpmInput) rpmInput.value = rpm;
+      if (globalRpmEl) globalRpmEl.innerText = `${rpm} RPM`;
+    }
+
+    if (keysRes.ok) {
+      const data = await keysRes.json();
+      allApiKeys = data.keys || [];
+
+      const activeCount = allApiKeys.filter(k => k.status === 'active').length;
+      const totalRequests = allApiKeys.reduce((sum, k) => sum + (k.total_requests || 0), 0);
+
+      const totalKeysEl = document.getElementById('stat-total-keys');
+      const activeKeysEl = document.getElementById('stat-active-keys');
+      const keyRequestsEl = document.getElementById('stat-key-requests');
+
+      if (totalKeysEl) totalKeysEl.innerText = allApiKeys.length;
+      if (activeKeysEl) activeKeysEl.innerText = `${activeCount} Hoạt động`;
+      if (keyRequestsEl) keyRequestsEl.innerText = totalRequests.toLocaleString();
+
+      renderApiKeys(allApiKeys);
+    }
+  } catch (err) {
+    console.error('Lỗi tải dữ liệu bảo mật:', err);
+  }
+}
+
+function renderApiKeys(keys) {
+  const tbody = document.getElementById('api-keys-tbody');
+  if (!tbody) return;
+
+  if (!keys || keys.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #64748b; padding: 30px;">Chưa có API Key nào. Hãy bấm "Tạo API Key Mới" ở trên.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = keys.map(k => {
+    const isActive = k.status === 'active';
+    const statusBadge = isActive
+      ? `<span class="badge-status badge-healthy"><span class="badge-dot"></span> Hoạt động</span>`
+      : `<span class="badge-status badge-dead"><span class="badge-dot"></span> Vô hiệu hóa</span>`;
+
+    const maskedKey = k.key.length > 14
+      ? `${k.key.substring(0, 8)}••••••••${k.key.substring(k.key.length - 4)}`
+      : k.key;
+
+    const rpmBadge = k.rate_limit_rpm > 0
+      ? `<span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #38bdf8; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); padding: 2px 7px; border-radius: 4px;">${k.rate_limit_rpm} RPM</span>`
+      : `<span style="font-family: 'JetBrains Mono', monospace; color: #a7f3d0; background: rgba(16, 185, 129, 0.12); padding: 2px 7px; border-radius: 4px;">Vô hạn</span>`;
+
+    return `
+      <tr style="${!isActive ? 'opacity: 0.65;' : ''}">
+        <td>
+          <div style="font-weight: 700; color: #f0fdf4; font-size: 14px;">${escapeHtml(k.name || 'API Key')}</div>
+          <div style="font-size: 11px; color: #64748b; font-family: 'JetBrains Mono', monospace;">${escapeHtml(k.id || '')}</div>
+        </td>
+        <td>
+          <div class="key-token-display">
+            <span id="key-text-${k.id}" data-full="${escapeHtml(k.key)}" data-masked="${escapeHtml(maskedKey)}">${escapeHtml(maskedKey)}</span>
+            <button class="btn-icon-mini" onclick="toggleKeyVisibility('${k.id}')" title="Ẩn/Hiện đầy đủ Key">
+              <i id="eye-icon-${k.id}" class="fa-regular fa-eye"></i>
+            </button>
+            <button class="btn-icon-mini" onclick="copyText('${escapeHtml(k.key)}')" title="Copy API Key">
+              <i class="fa-regular fa-copy"></i>
+            </button>
+          </div>
+        </td>
+        <td>${rpmBadge}</td>
+        <td>
+          <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #00f5a0;">
+            ${(k.total_requests || 0).toLocaleString()}
+          </span>
+        </td>
+        <td style="color: #94a3b8; font-size: 12px; white-space: nowrap;">
+          ${k.last_used_at ? `<i class="fa-regular fa-clock"></i> ${k.last_used_at}` : '<span style="color: #64748b;">Chưa dùng</span>'}
+        </td>
+        <td>${statusBadge}</td>
+        <td>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn-icon-mini" onclick="toggleKeyStatus('${k.id}')" title="${isActive ? 'Vô hiệu hóa key này' : 'Bật lại key này'}">
+              <i class="fa-solid ${isActive ? 'fa-pause' : 'fa-play'}" style="color: ${isActive ? '#f59e0b' : '#00f5a0'};"></i>
+            </button>
+            <button class="btn-icon-danger" onclick="deleteKey('${k.id}', '${escapeHtml(k.name)}')" title="Xóa vĩnh viễn key này">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function toggleKeyVisibility(keyId) {
+  const textEl = document.getElementById(`key-text-${keyId}`);
+  const eyeEl = document.getElementById(`eye-icon-${keyId}`);
+  if (!textEl || !eyeEl) return;
+
+  const fullKey = textEl.getAttribute('data-full');
+  const maskedKey = textEl.getAttribute('data-masked');
+
+  if (textEl.innerText === maskedKey) {
+    textEl.innerText = fullKey;
+    eyeEl.className = 'fa-regular fa-eye-slash';
+  } else {
+    textEl.innerText = maskedKey;
+    eyeEl.className = 'fa-regular fa-eye';
+  }
+}
+
+async function updateSecurityConfig() {
+  const toggleEl = document.getElementById('toggle-require-auth');
+  const isChecked = toggleEl ? toggleEl.checked : false;
+
+  try {
+    const res = await fetch('/api/security/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ require_auth: isChecked })
+    });
+    if (res.ok) {
+      showToast(isChecked ? '🔒 Đã BẬT chế độ bắt buộc xác thực API Key!' : '🔓 Đã chuyển sang chế độ Công khai (Open API)!');
+      loadSecurityData();
+    }
+  } catch (err) {
+    showToast('❌ Lỗi cập nhật cài đặt: ' + err.message);
+  }
+}
+
+async function saveGlobalRpm() {
+  const rpmInput = document.getElementById('input-global-rpm');
+  const rpmVal = parseInt(rpmInput ? rpmInput.value : '60', 10);
+  if (isNaN(rpmVal) || rpmVal < 1) {
+    showToast('⚠️ Vui lòng nhập số RPM hợp lệ (>= 1)');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/security/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ global_rate_limit_rpm: rpmVal })
+    });
+    if (res.ok) {
+      showToast(`⚡ Đã cập nhật Rate Limit toàn cục: ${rpmVal} request/phút!`);
+      loadSecurityData();
+    }
+  } catch (err) {
+    showToast('❌ Lỗi lưu Rate Limit: ' + err.message);
+  }
+}
+
+async function handleCreateKey(e) {
+  e.preventDefault();
+  const nameInput = document.getElementById('new-key-name');
+  const rpmInput = document.getElementById('new-key-rpm');
+  const customInput = document.getElementById('new-key-custom');
+
+  const name = nameInput ? nameInput.value.trim() : '';
+  const rpm = parseInt(rpmInput ? rpmInput.value : '30', 10) || 0;
+  const customKey = customInput ? customInput.value.trim() : '';
+
+  if (!name) {
+    showToast('⚠️ Vui lòng nhập tên API Key');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/security/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, rate_limit_rpm: rpm, custom_key: customKey || null })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(`🔑 Đã tạo thành công API Key: ${data.key.name}`);
+      if (nameInput) nameInput.value = '';
+      if (customInput) customInput.value = '';
+      loadSecurityData();
+    } else {
+      const errData = await res.json();
+      showToast('❌ Lỗi tạo key: ' + (errData.detail || 'Thất bại'));
+    }
+  } catch (err) {
+    showToast('❌ Lỗi kết nối: ' + err.message);
+  }
+}
+
+async function toggleKeyStatus(keyId) {
+  try {
+    const res = await fetch(`/api/security/keys/${encodeURIComponent(keyId)}/toggle`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      const st = data.key.status === 'active' ? 'kích hoạt lại' : 'tạm dừng';
+      showToast(`⚡ Đã ${st} API Key thành công!`);
+      loadSecurityData();
+    }
+  } catch (err) {
+    showToast('❌ Lỗi đổi trạng thái key: ' + err.message);
+  }
+}
+
+async function deleteKey(keyId, keyName) {
+  if (!confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn API Key "${keyName}"?\nCác ứng dụng đang dùng Key này sẽ bị từ chối kết nối!`)) return;
+
+  try {
+    const res = await fetch(`/api/security/keys/${encodeURIComponent(keyId)}`, { method: 'DELETE' });
+    if (res.ok) {
+      showToast(`🗑️ Đã xóa API Key "${keyName}" vĩnh viễn!`);
+      loadSecurityData();
+    }
+  } catch (err) {
+    showToast('❌ Lỗi xóa key: ' + err.message);
   }
 }
 

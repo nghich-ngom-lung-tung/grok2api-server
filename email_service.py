@@ -25,6 +25,8 @@ import random
 import time
 import string as _string
 import threading
+import urllib.parse
+from typing import Any, Dict, List, Optional
 
 # common.py tự động fix SSL certs + setup console UTF-8 khi import
 import common  # noqa: F401

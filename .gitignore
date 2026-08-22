@@ -63,3 +63,7 @@ Thumbs.db
 .vscode/
 .idea/
 .fleet/
+
+# Temporary directories
+temp_chrome/
+videos/

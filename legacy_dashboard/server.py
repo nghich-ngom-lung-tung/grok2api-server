@@ -4,7 +4,7 @@ Grok Imagine Web Dashboard & OpenAI-Compatible API Server
 - Cổng OpenAI API chuẩn: /v1/images/generations & /v1/chat/completions
 - Dashboard Web UI: Thống kê Quota, Lịch sử tạo ảnh, Studio vẽ ảnh trực tiếp, Quản lý kho tài khoản
 """
-import os, sys, time, json, random, re, threading, asyncio
+import os, sys, time, json, random, re, threading, asyncio, secrets, collections
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -29,6 +29,8 @@ GROK_TXT = os.path.join(KEYS_DIR, "grok.txt")
 ACCOUNTS_TXT = os.path.join(KEYS_DIR, "accounts.txt")
 HISTORY_JSON = os.path.join(DATA_DIR, "history.json")
 REQUEST_LOGS_JSON = os.path.join(DATA_DIR, "request_logs.json")
+API_KEYS_JSON = os.path.join(DATA_DIR, "api_keys.json")
+AUTH_CONFIG_JSON = os.path.join(DATA_DIR, "auth_config.json")
 
 os.makedirs(KEYS_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -579,6 +581,230 @@ def remove_grok_watermark(image_path: str, output_path: str = None) -> str:
 
 pool_manager = AccountPoolManager()
 
+# ── API Key & Rate Limiting Engine ──
+class ApiKeyManager:
+    """Quản lý danh sách API Key và cấu hình bảo mật hệ thống"""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.keys: List[Dict[str, Any]] = []
+        self.config: Dict[str, Any] = {
+            "require_auth": os.getenv("API_AUTH_ENABLED", "false").lower() in ("true", "1", "yes"),
+            "global_rate_limit_rpm": int(os.getenv("GLOBAL_RATE_LIMIT_RPM", "60"))
+        }
+        self.load()
+
+    def load(self):
+        with self.lock:
+            if os.path.exists(AUTH_CONFIG_JSON):
+                try:
+                    with open(AUTH_CONFIG_JSON, "r", encoding="utf-8") as f:
+                        self.config.update(json.load(f))
+                except Exception:
+                    pass
+            if os.path.exists(API_KEYS_JSON):
+                try:
+                    with open(API_KEYS_JSON, "r", encoding="utf-8") as f:
+                        self.keys = json.load(f)
+                except Exception:
+                    self.keys = []
+            
+            # Tự động tạo 1 Master API Key mặc định nếu kho key đang trống
+            if not self.keys:
+                default_k = f"grok-sk-{secrets.token_hex(16)}"
+                self.keys.append({
+                    "id": f"key_{int(time.time()*1000)}",
+                    "name": "Default Master Key",
+                    "key": default_k,
+                    "status": "active",
+                    "rate_limit_rpm": 60,
+                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "last_used_at": None,
+                    "total_requests": 0
+                })
+                self._save_keys_unlocked()
+
+    def _save_config_unlocked(self):
+        try:
+            with open(AUTH_CONFIG_JSON, "w", encoding="utf-8") as f:
+                json.dump(self.config, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _save_keys_unlocked(self):
+        try:
+            with open(API_KEYS_JSON, "w", encoding="utf-8") as f:
+                json.dump(self.keys, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def get_config(self) -> Dict[str, Any]:
+        with self.lock:
+            return dict(self.config)
+
+    def update_config(self, require_auth: Optional[bool] = None, global_rate_limit_rpm: Optional[int] = None) -> Dict[str, Any]:
+        with self.lock:
+            if require_auth is not None:
+                self.config["require_auth"] = bool(require_auth)
+            if global_rate_limit_rpm is not None:
+                self.config["global_rate_limit_rpm"] = max(1, int(global_rate_limit_rpm))
+            self._save_config_unlocked()
+            return dict(self.config)
+
+    def get_keys(self) -> List[Dict[str, Any]]:
+        with self.lock:
+            return [dict(k) for k in self.keys]
+
+    def create_key(self, name: str, rate_limit_rpm: int = 30, custom_key: Optional[str] = None) -> Dict[str, Any]:
+        with self.lock:
+            key_token = custom_key.strip() if custom_key and custom_key.strip() else f"grok-sk-{secrets.token_hex(16)}"
+            new_item = {
+                "id": f"key_{int(time.time()*1000)}_{random.randint(100, 999)}",
+                "name": name.strip() or "API Key",
+                "key": key_token,
+                "status": "active",
+                "rate_limit_rpm": max(0, int(rate_limit_rpm)),
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "last_used_at": None,
+                "total_requests": 0
+            }
+            self.keys.insert(0, new_item)
+            self._save_keys_unlocked()
+            return new_item
+
+    def delete_key(self, key_id: str) -> bool:
+        with self.lock:
+            orig_len = len(self.keys)
+            self.keys = [k for k in self.keys if k["id"] != key_id and k["key"] != key_id]
+            if len(self.keys) < orig_len:
+                self._save_keys_unlocked()
+                return True
+            return False
+
+    def toggle_key(self, key_id: str) -> Optional[Dict[str, Any]]:
+        with self.lock:
+            for k in self.keys:
+                if k["id"] == key_id or k["key"] == key_id:
+                    k["status"] = "disabled" if k.get("status") == "active" else "active"
+                    self._save_keys_unlocked()
+                    return dict(k)
+            return None
+
+    def validate_key(self, token: str) -> Optional[Dict[str, Any]]:
+        with self.lock:
+            for k in self.keys:
+                if k.get("key") == token and k.get("status") == "active":
+                    k["last_used_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    k["total_requests"] = k.get("total_requests", 0) + 1
+                    self._save_keys_unlocked()
+                    return dict(k)
+            return None
+
+class RateLimiter:
+    """Sliding Window Rate Limiter (Thread-safe) giới hạn số Request/Phút theo IP hoặc Key"""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.history: Dict[str, List[float]] = collections.defaultdict(list)
+
+    def check(self, identifier: str, limit_rpm: int) -> tuple:
+        now = time.time()
+        window = 60.0
+        with self.lock:
+            timestamps = [t for t in self.history[identifier] if now - t < window]
+            self.history[identifier] = timestamps
+            
+            if len(timestamps) >= limit_rpm:
+                oldest = timestamps[0]
+                retry_after = max(1, int(window - (now - oldest)))
+                return False, 0, retry_after
+            
+            self.history[identifier].append(now)
+            remaining = max(0, limit_rpm - len(self.history[identifier]))
+            return True, remaining, 0
+
+api_key_manager = ApiKeyManager()
+rate_limiter = RateLimiter()
+
+def extract_api_key(request: Request) -> Optional[str]:
+    """Trích xuất API Key từ Authorization header, x-api-key hoặc query params"""
+    auth_header = request.headers.get("authorization", "").strip()
+    if auth_header:
+        parts = auth_header.split(" ")
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            return parts[1].strip()
+        if len(parts) == 1 and not parts[0].lower().startswith("bearer"):
+            return parts[0].strip()
+    x_api_key = request.headers.get("x-api-key", "").strip()
+    if x_api_key:
+        return x_api_key
+    q_key = request.query_params.get("api_key", "").strip()
+    if q_key:
+        return q_key
+    return None
+
+def verify_auth_and_rate_limit(request: Request) -> Optional[Dict[str, Any]]:
+    """Xác thực Bearer API Key và kiểm tra giới hạn Rate Limit (RPM)"""
+    client_ip = get_real_client_ip(request)
+    auth_config = api_key_manager.get_config()
+    require_auth = auth_config.get("require_auth", False)
+    global_rpm = auth_config.get("global_rate_limit_rpm", 60)
+
+    token = extract_api_key(request)
+    key_obj = None
+
+    if token:
+        key_obj = api_key_manager.validate_key(token)
+        if not key_obj and require_auth:
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "error": {
+                        "message": "Sai API Key hoặc Key đã bị vô hiệu hóa. Vui lòng kiểm tra API Key trong Grok Dashboard.",
+                        "type": "invalid_request_error",
+                        "param": None,
+                        "code": "invalid_api_key"
+                    }
+                }
+            )
+    elif require_auth:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": {
+                    "message": "Yêu cầu API Key để truy cập. Vui lòng truyền header 'Authorization: Bearer <your_api_key>'.",
+                    "type": "invalid_request_error",
+                    "param": None,
+                    "code": "missing_api_key"
+                }
+            }
+        )
+
+    # Xác định mức giới hạn RPM
+    if key_obj:
+        rpm = key_obj.get("rate_limit_rpm", 30)
+        limiter_id = f"key:{key_obj['id']}"
+    else:
+        rpm = global_rpm
+        limiter_id = f"ip:{client_ip}"
+
+    # Kiểm tra Rate Limit (nếu rpm > 0, 0 = không giới hạn)
+    if rpm > 0:
+        is_allowed, remaining, retry_after = rate_limiter.check(limiter_id, rpm)
+        if not is_allowed:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": {
+                        "message": f"Vượt quá giới hạn request ({rpm} request/phút). Vui lòng thử lại sau {retry_after} giây.",
+                        "type": "requests",
+                        "param": None,
+                        "code": "rate_limit_exceeded"
+                    }
+                },
+                headers={"Retry-After": str(retry_after), "X-RateLimit-Limit": str(rpm), "X-RateLimit-Remaining": "0"}
+            )
+
+    return key_obj
+
 def get_next_sso_token() -> Optional[str]:
     return pool_manager.get_best_token()
 
@@ -860,6 +1086,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    """Đảm bảo mọi lỗi HTTP đều trả về đúng chuẩn JSON Payload của OpenAI API"""
+    if isinstance(exc.detail, dict) and "error" in exc.detail:
+        return JSONResponse(status_code=exc.status_code, content=exc.detail, headers=exc.headers)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "message": str(exc.detail),
+                "type": "invalid_request_error" if exc.status_code < 500 else "api_error",
+                "param": None,
+                "code": "error"
+            }
+        },
+        headers=exc.headers
+    )
+
 def get_real_client_ip(request: Request) -> str:
     """Bắt chính xác địa chỉ IP của Client (kể cả qua Cloudflare Tunnel, Nginx, Reverse Proxy)"""
     cf_ip = request.headers.get("cf-connecting-ip")
@@ -907,6 +1151,8 @@ async def request_monitor_middleware(request: Request, call_next):
                     model = "grok-3"
                 elif path.startswith("/api/pool"):
                     model = "System / Pool"
+                elif path.startswith("/api/security"):
+                    model = "Security / Key"
                 elif path in ["/api/stats", "/api/models", "/api/history", "/api/request-stats", "/api/request-logs", "/"]:
                     model = "Dashboard"
                 else:
@@ -942,6 +1188,15 @@ class ChatCompletionRequest(BaseModel):
 class DirectDrawRequest(BaseModel):
     prompt: str
     model: Optional[str] = "grok-imagine-image-2.0"
+
+class CreateApiKeyRequest(BaseModel):
+    name: str
+    rate_limit_rpm: Optional[int] = 30
+    custom_key: Optional[str] = None
+
+class UpdateSecurityConfigRequest(BaseModel):
+    require_auth: Optional[bool] = None
+    global_rate_limit_rpm: Optional[int] = None
 
 # ── Model Registry & Specifications ──
 AVAILABLE_MODELS = [
@@ -1022,8 +1277,11 @@ AVAILABLE_MODELS = [
 # ── API Endpoints ──
 
 @app.get("/v1/models")
-def get_v1_models():
+def get_v1_models(request: Request):
     """Endpoint chuẩn OpenAI trả về danh sách toàn bộ model có thể sử dụng"""
+    cfg = api_key_manager.get_config()
+    if cfg.get("require_auth"):
+        verify_auth_and_rate_limit(request)
     return {
         "object": "list",
         "data": [
@@ -1047,6 +1305,56 @@ def get_api_models():
         "total": len(AVAILABLE_MODELS),
         "models": AVAILABLE_MODELS
     }
+
+# ── Security & API Key Management Endpoints ──
+
+@app.get("/api/security/config")
+def get_security_config():
+    """Lấy cấu hình bảo mật và trạng thái bắt buộc API Key"""
+    return api_key_manager.get_config()
+
+@app.post("/api/security/config")
+def update_security_config(req: UpdateSecurityConfigRequest):
+    """Bật / Tắt xác thực API Key hoặc đổi giới hạn Rate Limit toàn cục"""
+    cfg = api_key_manager.update_config(
+        require_auth=req.require_auth,
+        global_rate_limit_rpm=req.global_rate_limit_rpm
+    )
+    return {"status": "ok", "config": cfg}
+
+@app.get("/api/security/keys")
+def get_security_keys():
+    """Lấy danh sách tất cả API Key hiện có"""
+    keys = api_key_manager.get_keys()
+    return {"total": len(keys), "keys": keys}
+
+@app.post("/api/security/keys")
+def create_security_key(req: CreateApiKeyRequest):
+    """Tạo API Key mới với tên và giới hạn RPM tùy chỉnh"""
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=400, detail="Tên API Key không được để trống")
+    item = api_key_manager.create_key(
+        name=req.name.strip(),
+        rate_limit_rpm=req.rate_limit_rpm or 30,
+        custom_key=req.custom_key
+    )
+    return {"status": "ok", "key": item}
+
+@app.delete("/api/security/keys/{key_id}")
+def delete_security_key(key_id: str):
+    """Xóa vĩnh viễn 1 API Key"""
+    success = api_key_manager.delete_key(key_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="API Key không tồn tại")
+    return {"status": "ok", "message": "Đã xóa API Key thành công"}
+
+@app.post("/api/security/keys/{key_id}/toggle")
+def toggle_security_key(key_id: str):
+    """Bật hoặc Vô hiệu hóa (Tắt) tạm thời 1 API Key"""
+    res = api_key_manager.toggle_key(key_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="API Key không tồn tại")
+    return {"status": "ok", "key": res}
 
 @app.get("/api/stats")
 def get_stats():
@@ -1199,6 +1507,7 @@ async def api_direct_draw(req: DirectDrawRequest, request: Request):
 async def openai_image_generations(req: ImageGenRequest, request: Request):
     """Endpoint tạo ảnh tương thích 100% chuẩn OpenAI DALL-E"""
     request.state.model = req.model or "grok-imagine-image"
+    verify_auth_and_rate_limit(request)
     loop = asyncio.get_event_loop()
     try:
         res = await loop.run_in_executor(None, do_generate_image, req.prompt)
@@ -1213,6 +1522,8 @@ async def openai_image_generations(req: ImageGenRequest, request: Request):
                 }
             ]
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1220,6 +1531,7 @@ async def openai_image_generations(req: ImageGenRequest, request: Request):
 async def openai_chat_completions(req: ChatCompletionRequest, request: Request):
     """Endpoint chat tương thích chuẩn OpenAI Chat (cho model grok-imagine-image)"""
     request.state.model = req.model or "grok-3"
+    verify_auth_and_rate_limit(request)
     user_prompt = ""
     for m in reversed(req.messages):
         if m.role == "user":
@@ -1257,6 +1569,8 @@ async def openai_chat_completions(req: ChatCompletionRequest, request: Request):
                 "total_tokens": len(user_prompt.split()) + len(reply_text.split())
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
