@@ -67,3 +67,4 @@ Thumbs.db
 # Temporary directories
 temp_chrome/
 videos/
+pod_output/
