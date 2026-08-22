@@ -25,17 +25,26 @@ def remove_grok_watermark(image_path: str) -> bool:
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
         tophat = cv2.morphologyEx(gray, cv2.MORPH_TOPHAT, kernel)
         _, mask = cv2.threshold(tophat, 40, 255, cv2.THRESH_BINARY)
-        dilated_mask = cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), iterations=2)
+        dilate_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        dilated_mask = cv2.dilate(mask, dilate_kernel, iterations=2)
+        # Inpaint xóa watermark
         inpainted_roi = cv2.inpaint(roi, dilated_mask, inpaintRadius=4, flags=cv2.INPAINT_TELEA)
         img[y1:y2, x1:x2] = inpainted_roi
-        is_success, buffer = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+
+        # 💎 TỰ ĐỘNG UPSCALE LÊN CHUẨN 4K (4x Lanczos Super-Res)
+        # Giúp mọi ảnh trả về qua endpoint API đạt chuẩn 4K / in ấn POD
+        target_w = w * 4
+        target_h = h * 4
+        img_4k = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
+
+        is_success, buffer = cv2.imencode(".jpg", img_4k, [int(cv2.IMWRITE_JPEG_QUALITY), 98])
         if is_success:
             new_bytes = buffer.tobytes()
             with open(image_path, "wb") as f:
                 f.write(new_bytes)
             
             # Update SQLite size_bytes and sha256
-            asset_id = os.path.basename(image_path)
+            asset_id = os.path.splitext(os.path.basename(image_path))[0]
             new_size = len(new_bytes)
             new_sha = hashlib.sha256(new_bytes).hexdigest()
             try:
@@ -44,7 +53,7 @@ def remove_grok_watermark(image_path: str) -> bool:
                 cur.execute("UPDATE media_assets SET size_bytes = ?, sha256 = ? WHERE id = ?;", (new_size, new_sha, asset_id))
                 conn.commit()
                 conn.close()
-            except Exception as dbe:
+            except Exception:
                 pass
                 
             return True
