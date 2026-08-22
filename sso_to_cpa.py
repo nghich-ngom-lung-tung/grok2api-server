@@ -156,6 +156,7 @@ def sso_to_cpa(sso_token, email=""):
                 page.quit()
             except Exception:
                 pass
+        time.sleep(0.5)
         try:
             shutil.rmtree(temp_dir, ignore_errors=True)
         except Exception:
