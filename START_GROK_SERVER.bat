@@ -1,50 +1,39 @@
 @echo off
-chcp 65001 > nul
-title Grok2API Server - api.grokapi.cyou
+title Grok2API Master Server - api.grokapi.cyou
 cd /d "%~dp0"
 
 echo ========================================================
-echo   🚀 KHỞI ĐỘNG HỆ THỐNG GROK2API (https://api.grokapi.cyou)
+echo   [GROK2API SERVER] - https://api.grokapi.cyou
 echo ========================================================
 echo.
 
-:: 1. Khởi động watermark daemon (kèm auto-cleanup mỗi 6h)
-echo [1/3] Đang khởi động Watermark Daemon + Auto-Cleanup...
-start /b uv run python watermark_daemon.py
+:: 1. Watermark Daemon + 4K Super-Resolution
+echo [1/4] Starting Watermark Daemon (4K Upscaler)...
+start "Grok2API - Watermark Daemon" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "cd '%~dp0'; uv run python watermark_daemon.py"
 
-:: 2. Khởi động grok2api backend
-echo [2/3] Đang khởi động Grok2API Backend (Port 8080)...
-start /b cmd /c "cd /d grok2api_repo\backend && grok2api.exe --config ../config.yaml"
+:: 2. Browser Gateway (Port 8085)
+echo [2/4] Starting Browser Gateway (Port 8085 - Image Edit ^& Video)...
+start "Grok2API - Browser Gateway" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "cd '%~dp0'; uv run python browser_gateway.py"
 
-:: 3. Chờ backend thực sự sẵn sàng trước khi bật tunnel
-echo [..] Đang chờ Backend khởi động hoàn tất...
-set /a WAIT_COUNT=0
-:wait_ready
-curl -s http://127.0.0.1:8080/healthz >nul 2>&1
-if errorlevel 1 (
-    set /a WAIT_COUNT+=1
-    if %WAIT_COUNT% GEQ 30 (
-        echo [!] Backend không phản hồi sau 60 giây. Vui lòng kiểm tra lỗi.
-        pause
-        exit /b 1
-    )
-    timeout /t 2 >nul
-    goto wait_ready
-)
-echo [OK] Backend đã sẵn sàng trên port 8080!
+:: 3. Grok2API Backend (Port 8080)
+echo [3/4] Starting Grok2API Backend (Port 8080 - Chat ^& Text-to-Image)...
+start "Grok2API - Backend 8080" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "cd '%~dp0grok2api_repo\backend'; .\grok2api.exe --config ../config.yaml"
 
-:: 4. Khởi động Cloudflare Named Tunnel
-echo [3/3] Đang kết nối Cloudflare Tunnel (api.grokapi.cyou)...
-start /b cmd /c "cloudflared tunnel run grokapi"
+:: 4. Cloudflare Named Tunnel
+echo [4/4] Connecting Cloudflare Tunnel (api.grokapi.cyou)...
+start "Grok2API - Cloudflare Tunnel" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); cloudflared tunnel run grokapi"
 
 echo.
 echo ========================================================
-echo   ✅ HỆ THỐNG ĐÃ HOẠT ĐỘNG HOÀN HẢO!
+echo   [OK] HE THONG DANG CHAY HOAN HAO TREN CLOUD!
 echo.
-echo   🌐 Dashboard: https://api.grokapi.cyou/dashboard
-echo   🔑 API URL:   https://api.grokapi.cyou/v1/images/generations
-echo   🧹 Auto-Cleanup: Mỗi 6 giờ tự dọn tài khoản hết hạn
+echo   * Dashboard:        https://api.grokapi.cyou/dashboard
+echo   * API Ve anh:       https://api.grokapi.cyou/v1/images/generations
+echo   * API Sua anh:      https://api.grokapi.cyou/v1/images/edits
+echo   * API Tao Video:    https://api.grokapi.cyou/v1/videos/generations
+echo   * Auto-Cleanup:     Tu dong don tai khoan moi 6 gio
 echo ========================================================
 echo.
-echo (Đừng tắt cửa sổ này để server tiếp tục chạy nhé)
+echo [Luu y] Khong tat cua so nay de server tiep tuc hoat dong.
+echo.
 pause

@@ -5,5 +5,14 @@ ingress:
   - hostname: grokapi.cyou
     service: http://127.0.0.1:8080
   - hostname: api.grokapi.cyou
+    path: ^/v1/images/
+    service: http://127.0.0.1:8085
+  - hostname: api.grokapi.cyou
+    path: ^/v1/media/
+    service: http://127.0.0.1:8085
+  - hostname: api.grokapi.cyou
+    path: ^/v1/videos/
+    service: http://127.0.0.1:8085
+  - hostname: api.grokapi.cyou
     service: http://127.0.0.1:8080
   - service: http_status:404
