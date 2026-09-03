@@ -118,6 +118,71 @@ class GPTMailClient:
         return []
 
 
+class OTPMailClient:
+    """OTPMail.online API — Hỗ trợ nhận email và OTP tự động qua API
+    Tài liệu: https://otpmail.online/vi/api-docs
+    Base URL: https://api.otpmail.online
+    """
+    BASE = "https://api.otpmail.online"
+
+    def __init__(self, proxies: Any = None, api_key: str = None):
+        self.session = std_requests.Session()
+        if proxies:
+            self.session.proxies = proxies
+        self.session.headers.update({
+            "User-Agent": UA,
+            "Accept": "application/json",
+        })
+        self.api_key = api_key or os.getenv("OTPMAIL_API_KEY", "").strip()
+        if self.api_key:
+            self.session.headers.update({"x-api-key": self.api_key})
+        self.address = ""
+
+    def get_domains(self) -> List[str]:
+        try:
+            r = self.session.get(f"{self.BASE}/api/domains", timeout=10)
+            if r.status_code == 200 and r.json().get("success"):
+                doms = r.json().get("domains", [])
+                if doms:
+                    return doms
+        except Exception:
+            pass
+        return ["otpmail.online", "999ai.org", "hungzero.co.uk", "holi7.edu.pl"]
+
+    def create_email(self, domain: str = None) -> str:
+        domains = self.get_domains()
+        if not domain or domain not in domains:
+            domain = random.choice(domains)
+        prefix = "user" + "".join(random.choices(_string.ascii_lowercase + _string.digits, k=9))
+        self.address = f"{prefix}@{domain}"
+        return self.address
+
+    def fetch_first_email(self) -> Optional[str]:
+        if not self.address:
+            return None
+        url = f"{self.BASE}/api/{self.address}?html=true"
+        try:
+            r = self.session.get(url, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if data.get("success"):
+                    mail = data.get("mail", {})
+                    otp = data.get("otp", "")
+                    parts = []
+                    if otp:
+                        parts.append(f"Mã OTP: {otp}")
+                    if mail.get("subject"):
+                        parts.append(mail["subject"])
+                    if mail.get("sender"):
+                        parts.append(f"Từ: {mail['sender']}")
+                    if mail.get("content"):
+                        parts.append(mail["content"])
+                    return "\n".join(parts) if parts else str(data)
+        except Exception:
+            pass
+        return None
+
+
 class MailTMClient:
     """mail.tm 免费临时邮箱 — 无需 API Key，无需注册
     API 文档: https://docs.mail.tm/
@@ -1249,11 +1314,21 @@ class EmailService:
     def __init__(self, proxies: Any = None, provider: str = None):
         self.proxies = proxies
         self.provider = str(provider or os.getenv("EMAIL_PROVIDER") or "luckmail").strip().lower()
-        if self.provider not in {"gptmail", "mailtm", "luckmail", "mailnest", "gmail", "tmail", "fce", "outlook", "sfrankie", "tempmail", "guerrilla"}:
+        if self.provider not in {"gptmail", "mailtm", "luckmail", "mailnest", "gmail", "tmail", "fce", "outlook", "sfrankie", "tempmail", "guerrilla", "otpmail", "otpmailonline"}:
             raise ValueError(f"Không hỗ trợ nhà cung cấp email: {self.provider}")
 
     def create_email(self):
-        if self.provider in ("mailtm", "mailgw"):
+        if self.provider in ("otpmail", "otpmailonline"):
+            try:
+                client = OTPMailClient(self.proxies)
+                email = client.create_email()
+                token_like = {"provider": "otpmail", "client": client, "email": email}
+                print(f"[+] Hộp thư OTPMail.online đã tạo: {email}")
+                return token_like, email
+            except Exception as e:
+                print(f"[Lỗi] Yêu cầu OTPMail.online thất bại: {e}")
+                return None, None
+        elif self.provider in ("mailtm", "mailgw"):
             try:
                 client = MailTMClient(self.proxies)
                 email = client.create_email()
@@ -1381,7 +1456,7 @@ class EmailService:
             if not client:
                 return None
 
-            if provider in ("mailtm", "tempmail", "guerrilla", "luckmail", "gptmail-v2", "gmail", "tmail", "fce", "outlook", "sfrankie"):
+            if provider in ("mailtm", "tempmail", "guerrilla", "luckmail", "gptmail-v2", "gmail", "tmail", "fce", "outlook", "sfrankie", "otpmail", "otpmailonline"):
                 return client.fetch_first_email()
             elif provider == "mailnest":
                 return client.fetch_first_email(token_like.get("email"))
